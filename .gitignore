@@ -1,0 +1,11 @@
+node_modules/
+.env
+credentials.json
+google-token.json
+*.pem
+*.key
+/.vscode/
+dist/
+npm-debug.log
+package-lock.json
+

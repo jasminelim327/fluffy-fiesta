@@ -1,0 +1,246 @@
+// apple-calendar.js - iCloud Calendar Sync via CalDAV
+// Works with iCloud, Apple Calendar, or any CalDAV server
+
+const axios = require('axios');
+const crypto = require('crypto');
+
+class AppleCalendarSync {
+  constructor(config) {
+    this.serverUrl = config.serverUrl || 'https://caldav.icloud.com'; // Apple's CalDAV server
+    this.username = config.username; // Apple ID email
+    this.password = config.password; // App-specific password (not regular Apple ID password)
+    this.calendarId = config.calendarId || 'personal'; // Calendar name/ID
+  }
+
+  /**
+   * Create calendar event via CalDAV
+   * @param {Object} actionData - { action, deadline, priority, motivation }
+   * @returns {Promise<string>} Event UID
+   */
+  async addEvent(actionData) {
+    try {
+      const eventUid = `assistant-${Date.now()}@personal-assistant.local`;
+      const icalData = this._buildICalEvent(actionData, eventUid);
+
+      // Parse deadline to determine event time
+      const eventTime = this._parseDeadline(actionData.deadline);
+
+      const calendarPath = `/calendar/user/${this.username}/${this.calendarId}/`;
+      const eventPath = `${calendarPath}${eventUid}.ics`;
+
+      const response = await axios.put(
+        `${this.serverUrl}${eventPath}`,
+        icalData,
+        {
+          auth: {
+            username: this.username,
+            password: this.password
+          },
+          headers: {
+            'Content-Type': 'text/calendar; charset=utf-8'
+          }
+        }
+      );
+
+      console.log('✅ Added to Apple Calendar:', actionData.action);
+      return eventUid;
+    } catch (error) {
+      console.error('❌ Apple Calendar error:', error.response?.status, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get upcoming events from Apple Calendar
+   */
+  async getUpcomingEvents(days = 7) {
+    try {
+      const calendarPath = `/calendar/user/${this.username}/${this.calendarId}/`;
+
+      // Use PROPFIND + REPORT to query events
+      const response = await axios.request({
+        method: 'REPORT',
+        url: `${this.serverUrl}${calendarPath}`,
+        auth: {
+          username: this.username,
+          password: this.password
+        },
+        data: this._buildCalendarQuery(days),
+        headers: {
+          'Content-Type': 'application/xml; charset=utf-8',
+          'Depth': '1'
+        }
+      });
+
+      // Parse XML response and extract events
+      const events = this._parseCalendarResponse(response.data);
+      return events;
+    } catch (error) {
+      console.error('❌ Failed to fetch events:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Build iCalendar format event
+   */
+  _buildICalEvent(actionData, uid) {
+    const now = new Date();
+    const eventTime = this._parseDeadline(actionData.deadline);
+
+    // Format dates for iCalendar
+    const createdTime = this._formatICalDate(now);
+    const eventDate = this._formatICalDate(eventTime);
+
+    // Priority mapping: high=1, medium=5, low=9
+    const priorityMap = { high: 1, medium: 5, low: 9 };
+    const priority = priorityMap[actionData.priority] || 5;
+
+    const ical = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Personal Assistant//EN
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${createdTime}
+DTSTART:${eventDate}
+SUMMARY:${this._escapeText(actionData.action)}
+DESCRIPTION:${this._escapeText(actionData.motivation)}
+PRIORITY:${priority}
+STATUS:TENTATIVE
+SEQUENCE:0
+END:VEVENT
+END:VCALENDAR`;
+
+    return ical;
+  }
+
+  /**
+   * Build CalDAV REPORT query for upcoming events
+   */
+  _buildCalendarQuery(days) {
+    const now = new Date();
+    const future = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+    const startTime = this._formatCalDAVDate(now);
+    const endTime = this._formatCalDAVDate(future);
+
+    return `<?xml version="1.0" encoding="utf-8" ?>
+<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop>
+    <D:getetag/>
+    <C:calendar-data/>
+  </D:prop>
+  <C:filter>
+    <C:comp-filter name="VCALENDAR">
+      <C:comp-filter name="VEVENT">
+        <C:time-range start="${startTime}" end="${endTime}"/>
+      </C:comp-filter>
+    </C:comp-filter>
+  </C:filter>
+</C:calendar-query>`;
+  }
+
+  /**
+   * Parse iCalendar format date (YYYYMMDDTHHMMSSZ)
+   */
+  _formatICalDate(date) {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    const hours = String(date.getUTCHours()).padStart(2, '0');
+    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+
+    return `${year}${month}${day}T${hours}${minutes}${seconds}Z`;
+  }
+
+  /**
+   * Parse CalDAV date format
+   */
+  _formatCalDAVDate(date) {
+    return this._formatICalDate(date);
+  }
+
+  /**
+   * Parse deadline string to Date object
+   * Examples: "today", "tomorrow", "2024-12-25", "next Monday", "in 3 days"
+   */
+  _parseDeadline(deadlineStr) {
+    const now = new Date();
+    const str = deadlineStr.toLowerCase().trim();
+
+    if (str === 'today') {
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0);
+    }
+
+    if (str === 'tomorrow') {
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 9, 0);
+    }
+
+    // Parse dates like "2024-12-25"
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [year, month, day] = str.split('-').map(Number);
+      return new Date(year, month - 1, day, 9, 0);
+    }
+
+    // "in X days"
+    const daysMatch = str.match(/in (\d+) days?/);
+    if (daysMatch) {
+      const days = parseInt(daysMatch[1]);
+      const future = new Date(now);
+      future.setDate(future.getDate() + days);
+      return new Date(future.getFullYear(), future.getMonth(), future.getDate(), 9, 0);
+    }
+
+    // Default to today 9am
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0);
+  }
+
+  /**
+   * Escape text for iCalendar format
+   */
+  _escapeText(text) {
+    return text
+      .replace(/\\/g, '\\\\')
+      .replace(/\n/g, '\\n')
+      .replace(/,/g, '\\,')
+      .replace(/;/g, '\\;');
+  }
+
+  /**
+   * Parse CalDAV XML response (stub - would need XML parser)
+   */
+  _parseCalendarResponse(xmlData) {
+    // In production, use xml2js or similar
+    // For now, return empty array
+    return [];
+  }
+}
+
+module.exports = AppleCalendarSync;
+
+// Usage example:
+/*
+const AppleCalendarSync = require('./apple-calendar');
+
+const apple = new AppleCalendarSync({
+  username: 'your-email@icloud.com',
+  password: 'abcd-efgh-ijkl-mnop', // App-specific password from iCloud
+  calendarId: 'personal' // or your calendar ID
+});
+
+const actionData = {
+  action: 'Fix login bug',
+  deadline: 'tomorrow',
+  priority: 'high',
+  motivation: 'You got this!'
+};
+
+apple.addEvent(actionData).then(uid => {
+  console.log('Event added:', uid);
+}).catch(err => {
+  console.error('Error:', err.message);
+});
+*/
