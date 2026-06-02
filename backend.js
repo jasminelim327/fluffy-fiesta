@@ -298,13 +298,25 @@ app.get('/google/oauth/callback', async (req, res) => {
 
       console.log(`✅ Google Calendar linked for Telegram user ${userId}`);
 
-      // Notify user in Telegram
+      // Notify user in Telegram and ask for location to set timezone
       if (chatId && TELEGRAM_TOKEN) {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
           chat_id: chatId,
-          text: '✅ <b>Google Calendar connected!</b>\n\nYour tasks will now be added to your personal Google Calendar automatically.',
-          parse_mode: 'HTML'
+          text: '✅ *Google Calendar connected!*\n\nYour tasks will now be added to your personal Google Calendar automatically.',
+          parse_mode: 'Markdown'
         }).catch(err => console.error('Telegram confirmation failed:', err.message));
+
+        // Ask user to share location so we can set their timezone
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: '📍 *One more step!* Share your location so I can schedule events at the right local time for you.',
+          parse_mode: 'Markdown',
+          reply_markup: {
+            keyboard: [[{ text: '📍 Share my location', request_location: true }]],
+            resize_keyboard: true,
+            one_time_keyboard: true
+          }
+        }).catch(err => console.error('Telegram location prompt failed:', err.message));
       }
 
       return res.send(`
@@ -376,44 +388,88 @@ async function processAndReplySlack(userText, userId, channelId = '@' + userId) 
 // TELEGRAM HANDLERS
 // ============================================
 
+// Detect IANA timezone from coordinates using BigDataCloud (free, no API key needed)
+async function detectTimezone(latitude, longitude) {
+  try {
+    const resp = await axios.get('https://api.bigdatacloud.net/data/timezone-by-location', {
+      params: { latitude, longitude }
+    });
+    return resp.data?.ianaTimeZone || null;
+  } catch (err) {
+    console.error('Timezone detection failed:', err.message);
+    return null;
+  }
+}
+
+// Handle a location message from a Telegram user — detect + save their timezone
+async function handleTelegramLocation(userId, chatId, latitude, longitude) {
+  const tz = await detectTimezone(latitude, longitude);
+  if (!tz) {
+    await sendTelegramMessage(chatId, '⚠️ Could not detect timezone from your location. Please try again.');
+    return;
+  }
+
+  // Save to user profile
+  if (messagingIntegration) {
+    await messagingIntegration.assistant.updateProfileMeta(userId, { timezone: tz, telegramChatId: chatId });
+  }
+
+  await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+    chat_id: chatId,
+    text: `✅ *Timezone set to ${tz}*\n\nYour calendar events will now show at the right local time.`,
+    parse_mode: 'Markdown',
+    reply_markup: { remove_keyboard: true }  // dismiss the location keyboard
+  });
+  console.log(`✅ Timezone ${tz} saved for user ${userId}`);
+}
+
 app.post('/telegram/webhook', async (req, res) => {
   const update = req.body;
-  console.log('Telegram webhook received update:', JSON.stringify(update?.message?.text || update));
+  console.log('Telegram webhook received update:', JSON.stringify(update?.message?.text || update?.message?.location || update));
 
-  if (update.message?.text) {
-    const { text, from, chat } = update.message;
-    const userId = from.id;
-    const chatId = chat.id;
+  res.send('OK');
 
-    res.send('OK');
+  const msg = update.message;
+  if (!msg) return;
 
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+
+  // Location share — detect and save timezone
+  if (msg.location) {
     try {
-      await sendTelegramTyping(chatId);
-
-      if (messagingIntegration) {
-        // Store chatId in user profile for proactive reminders
-        messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
-          .catch(err => console.error('Profile meta update failed:', err.message));
-
-        const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
-        await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
-          parse_mode: formatted.parse_mode,
-          reply_markup: formatted.reply_markup
-        });
-      } else {
-        // Fallback if MessagingIntegration not yet initialized
-        const actionData = await processMessage(text);
-        const message = actionData.clarification
-          ? `I didn't get a task yet. Please tell me something like: "Buy milk tomorrow".`
-          : `\n✅ Got it!\n<b>${actionData.action}</b>\n📅 ${actionData.deadline}\n🎯 ${(actionData.priority || 'medium').toUpperCase()}\n💪 ${actionData.motivation}`;
-        await sendTelegramMessage(chatId, message);
-        if (!actionData.clarification) await syncTask(actionData, userId);
-      }
-    } catch (error) {
-      console.error('Telegram processing error:', error.response?.data || error.message);
+      await handleTelegramLocation(userId, chatId, msg.location.latitude, msg.location.longitude);
+    } catch (err) {
+      console.error('Location handling error:', err.message);
     }
-  } else {
-    res.send('OK');
+    return;
+  }
+
+  if (!msg.text) return;
+  const text = msg.text;
+
+  try {
+    await sendTelegramTyping(chatId);
+
+    if (messagingIntegration) {
+      messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
+        .catch(err => console.error('Profile meta update failed:', err.message));
+
+      const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
+      await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
+        parse_mode: formatted.parse_mode,
+        reply_markup: formatted.reply_markup
+      });
+    } else {
+      const actionData = await processMessage(text);
+      const message = actionData.clarification
+        ? `I didn't get a task yet. Please tell me something like: "Buy milk tomorrow".`
+        : `\n✅ Got it!\n<b>${actionData.action}</b>\n📅 ${actionData.deadline}\n🎯 ${(actionData.priority || 'medium').toUpperCase()}\n💪 ${actionData.motivation}`;
+      await sendTelegramMessage(chatId, message);
+      if (!actionData.clarification) await syncTask(actionData, userId);
+    }
+  } catch (error) {
+    console.error('Telegram processing error:', error.response?.data || error.message);
   }
 });
 
@@ -437,11 +493,23 @@ async function telegramPolling() {
         processedIds.add(update.update_id);
         offset = update.update_id + 1;
 
-        if (update.message?.text) {
-          const { text, from, chat } = update.message;
-          const userId = from.id;
-          const chatId = chat.id;
+        const msg = update.message;
+        if (!msg) continue;
+        const userId = msg.from.id;
+        const chatId = msg.chat.id;
 
+        // Location share — detect and save timezone
+        if (msg.location) {
+          try {
+            await handleTelegramLocation(userId, chatId, msg.location.latitude, msg.location.longitude);
+          } catch (err) {
+            console.error('Polling location handling error:', err.message);
+          }
+          continue;
+        }
+
+        if (msg.text) {
+          const { text } = msg;
           try {
             await sendTelegramTyping(chatId);
             if (messagingIntegration) {
@@ -535,6 +603,10 @@ async function getCalendarForUser(userId) {
 
     console.log(`[DEBUG] getCalendarForUser ${userId}: token=${userToken ? 'found' : 'null'}, refresh_token=${userToken?.refresh_token ? 'yes' : 'no'}`);
 
+    // Load user's timezone preference from their profile
+    const userProfile = await db.getUserProfile(userId).catch(() => null);
+    const userTimezone = userProfile?.timezone || process.env.USER_TIMEZONE || 'Asia/Singapore';
+
     // User has their own linked calendar with a valid refresh token
     if (userToken?.refresh_token) {
       const GoogleCalendarSync = require('./google-calendar');
@@ -542,7 +614,7 @@ async function getCalendarForUser(userId) {
         credentials: googleCalendar.credentials,
         tokenJson: userToken,
         calendarId: 'primary',
-        timezone: process.env.USER_TIMEZONE || 'Asia/Singapore'
+        timezone: userTimezone
       });
       await userCalendar.initialize();
 
@@ -569,7 +641,8 @@ async function getCalendarForUser(userId) {
       const userCalendar = new GoogleCalendarSync({
         credentials: googleCalendar.credentials,
         tokenJson: userToken,
-        calendarId: 'primary'
+        calendarId: 'primary',
+        timezone: userTimezone
       });
       await userCalendar.initialize();
       return { calendar: userCalendar, needsConnect: false, warnReconnect: true };
