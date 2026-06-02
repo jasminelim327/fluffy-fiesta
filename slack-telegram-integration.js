@@ -100,12 +100,17 @@ class MessagingIntegration {
           if (url) {
             return {
               chat_id: chatId,
-              text: `🔗 <b>Connect your Google Calendar</b>\n\nTap the link below to sign in with Google. Once authorised, all your tasks will be added to your personal calendar automatically.\n\n<a href="${url}">Sign in with Google →</a>`,
-              parse_mode: 'HTML'
+              text: '🗓 *Connect your Google Calendar*\n\nTap the button below to sign in with Google. Once authorised, your tasks will be added to your personal calendar automatically.',
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '🔗 Sign in with Google', url }
+                ]]
+              }
             };
           }
         }
-        return { chat_id: chatId, text: 'Google Calendar connection is not configured on this server.', parse_mode: 'HTML' };
+        return { chat_id: chatId, text: 'Google Calendar connection is not configured on this server.', parse_mode: 'Markdown' };
       }
 
       default:
@@ -377,11 +382,11 @@ class MessagingIntegration {
   // SEND TO TELEGRAM
   // ============================================
 
-  async sendToTelegram(chatId, text) {
+  async sendToTelegram(chatId, text, options = {}) {
     try {
       await axios.post(
         `https://api.telegram.org/bot${this.telegramToken}/sendMessage`,
-        { chat_id: chatId, text, parse_mode: 'Markdown' }
+        { chat_id: chatId, text, parse_mode: 'Markdown', ...options }
       );
     } catch (error) {
       console.error('Telegram send error:', error.message);

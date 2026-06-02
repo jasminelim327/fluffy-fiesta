@@ -382,7 +382,10 @@ app.post('/telegram/webhook', async (req, res) => {
           .catch(err => console.error('Profile meta update failed:', err.message));
 
         const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
-        await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text);
+        await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
+          parse_mode: formatted.parse_mode,
+          reply_markup: formatted.reply_markup
+        });
       } else {
         // Fallback if MessagingIntegration not yet initialized
         const actionData = await processMessage(text);
@@ -431,7 +434,10 @@ async function telegramPolling() {
               messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
                 .catch(err => console.error('Profile meta update failed:', err.message));
               const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
-              await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text);
+              await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
+                parse_mode: formatted.parse_mode,
+                reply_markup: formatted.reply_markup
+              });
             } else {
               const actionData = await processMessage(text);
               const message = actionData.clarification
@@ -532,18 +538,26 @@ async function getCalendarForUser(userId) {
 // Generates a Google OAuth URL tied to a Telegram userId + chatId.
 // The state param lets the callback identify which user authorised.
 function generateGoogleAuthUrl(userId, chatId) {
-  if (!googleCalendar || !googleCalendar.auth) return null;
+  if (!googleCalendar || !googleCalendar.credentials) return null;
 
   const state = crypto.randomBytes(16).toString('hex');
   pendingOAuthStates.set(state, { userId, chatId });
   setTimeout(() => pendingOAuthStates.delete(state), 10 * 60 * 1000); // 10-min TTL
 
-  return googleCalendar.auth.generateAuthUrl({
+  // Build URL manually — the googleapis generateAuthUrl() strips underscores
+  // from param names in some versions (access_type → accesstype), breaking OAuth.
+  const creds = googleCalendar.credentials.installed || googleCalendar.credentials.web || {};
+  const params = new URLSearchParams({
+    client_id: creds.client_id,
+    redirect_uri: creds.redirect_uris[0],
+    response_type: 'code',
+    scope: 'https://www.googleapis.com/auth/calendar',
     access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/calendar'],
     prompt: 'consent',
     state
   });
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
 async function initializeIntegrations() {
