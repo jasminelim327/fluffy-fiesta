@@ -113,6 +113,9 @@ class GoogleCalendarSync {
       const calendar = google.calendar({ version: 'v3', auth: this.auth });
       const eventTime = this._parseDeadline(actionData.deadline);
 
+      console.log(`[DEBUG] Deadline input: "${actionData.deadline}"`);
+      console.log(`[DEBUG] Parsed time: ${eventTime.toISOString()}`);
+
       const event = {
         summary: actionData.action,
         description: actionData.motivation,
