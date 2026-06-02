@@ -282,14 +282,21 @@ app.get('/google/oauth/callback', async (req, res) => {
       const tempAuth = new google.auth.OAuth2(creds.client_id, creds.client_secret, creds.redirect_uris[0]);
       const { tokens } = await tempAuth.getToken(code);
 
+      console.log(`[OAuth] tokens received for user ${userId}: refresh_token=${tokens.refresh_token ? 'yes' : 'no'}, access_token=${tokens.access_token ? 'yes' : 'no'}`);
+
       if (!tokens.refresh_token) {
         console.warn(`⚠️ No refresh_token returned for user ${userId}. User may need to revoke app access and reconnect.`);
       }
 
       // Persist token to user profile
-      const profile = (await db.getUserProfile(userId)) || {};
+      const existing = await db.getUserProfile(userId);
+      const profile = existing || {};
       profile.googleToken = tokens;
       await db.saveUserProfile(userId, profile);
+
+      // Verify the save was successful
+      const saved = await db.getUserProfile(userId);
+      console.log(`[OAuth] verify save for user ${userId}: googleToken=${saved?.googleToken ? 'present' : 'MISSING'}`);
 
       console.log(`✅ Google Calendar linked for Telegram user ${userId}`);
 

@@ -33,24 +33,36 @@ async function initializeDatabase() {
 async function getUserProfile(userId) {
   if (!pool) return null;
 
-  const { rows } = await pool.query(
-    'SELECT profile FROM user_profiles WHERE user_id = $1',
-    [userId]
-  );
-
-  return rows[0]?.profile || null;
+  try {
+    const { rows } = await pool.query(
+      'SELECT profile FROM user_profiles WHERE user_id = $1',
+      [String(userId)]
+    );
+    const profile = rows[0]?.profile || null;
+    console.log(`[DB] getUserProfile(${userId}): ${profile ? 'found' : 'null'}`);
+    return profile;
+  } catch (err) {
+    console.error(`[DB] getUserProfile(${userId}) error:`, err.message);
+    return null;
+  }
 }
 
 async function saveUserProfile(userId, profile) {
   if (!pool) return;
 
-  await pool.query(
-    `INSERT INTO user_profiles (user_id, profile)
-     VALUES ($1, $2)
-     ON CONFLICT (user_id)
-     DO UPDATE SET profile = EXCLUDED.profile, updated_at = NOW()`,
-    [userId, profile]
-  );
+  try {
+    await pool.query(
+      `INSERT INTO user_profiles (user_id, profile)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (user_id)
+       DO UPDATE SET profile = EXCLUDED.profile, updated_at = NOW()`,
+      [String(userId), JSON.stringify(profile)]
+    );
+    console.log(`[DB] saveUserProfile(${userId}): saved keys=[${Object.keys(profile).join(',')}]`);
+  } catch (err) {
+    console.error(`[DB] saveUserProfile(${userId}) error:`, err.message);
+    throw err;
+  }
 }
 
 module.exports = {
