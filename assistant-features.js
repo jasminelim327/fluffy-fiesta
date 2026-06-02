@@ -603,9 +603,22 @@ MOTIVATION: [one short encouraging phrase]`;
   // ============================================
 
   async updateProfileMeta(userId, meta) {
-    const profile = await this._getOrCreateProfile(userId);
+    // Always read fresh from DB — the in-memory cache may be stale if an
+    // external process (e.g. OAuth callback) updated the profile since last load.
+    const persisted = await db.getUserProfile(userId);
+    const profile = persisted || this.userProfiles.get(userId) || {
+      userId,
+      created: new Date().toISOString(),
+      allTasks: [],
+      currentStreak: 0,
+      commitmentHistory: {},
+      energyLog: [],
+      longTermGoals: [],
+      partners: []
+    };
     Object.assign(profile, meta);
-    await this._saveProfile(userId, profile);
+    this.userProfiles.set(userId, profile); // keep cache in sync
+    await db.saveUserProfile(userId, profile);
   }
 
   // ============================================
