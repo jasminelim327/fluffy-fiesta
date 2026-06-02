@@ -11,6 +11,7 @@ class GoogleCalendarSync {
     this.tokenPath = config.tokenPath || './google-token.json';
     this.tokenJson = config.tokenJson || null;
     this.calendarId = config.calendarId || 'primary'; // 'primary' = default calendar
+    this.timezone = config.timezone || process.env.USER_TIMEZONE || 'Asia/Singapore';
     this.auth = null;
   }
 
@@ -113,21 +114,21 @@ class GoogleCalendarSync {
       if (!this.auth) await this.initialize();
 
       const calendar = google.calendar({ version: 'v3', auth: this.auth });
-      const eventTime = this._parseDeadline(actionData.deadline);
+      const eventTimeStr = this._parseDeadline(actionData.deadline);
 
       console.log(`[DEBUG] Deadline input: "${actionData.deadline}"`);
-      console.log(`[DEBUG] Parsed time: ${eventTime.toISOString()}`);
+      console.log(`[DEBUG] Parsed time: ${eventTimeStr} (${this.timezone})`);
 
       const event = {
         summary: actionData.action,
         description: actionData.motivation,
         start: {
-          dateTime: eventTime.toISOString(),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          dateTime: eventTimeStr,
+          timeZone: this.timezone
         },
         end: {
-          dateTime: new Date(eventTime.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          dateTime: this._addHours(eventTimeStr, 1),
+          timeZone: this.timezone
         },
         reminders: {
           useDefault: false,
@@ -167,17 +168,17 @@ class GoogleCalendarSync {
       if (!this.auth) await this.initialize();
 
       const calendar = google.calendar({ version: 'v3', auth: this.auth });
-      const eventTime = this._parseDeadline(actionData.deadline);
+      const eventTimeStr = this._parseDeadline(actionData.deadline);
       const event = {
         summary: actionData.action,
         description: actionData.motivation,
         start: {
-          dateTime: eventTime.toISOString(),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          dateTime: eventTimeStr,
+          timeZone: this.timezone
         },
         end: {
-          dateTime: new Date(eventTime.getTime() + durationMinutes * 60 * 1000).toISOString(),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+          dateTime: this._addHours(eventTimeStr, durationMinutes / 60),
+          timeZone: this.timezone
         },
         recurrence: [`RRULE:FREQ=DAILY;COUNT=${count}`],
         reminders: {
@@ -286,60 +287,64 @@ class GoogleCalendarSync {
   }
 
   /**
-   * Parse deadline string to Date
+   * Parse deadline string into a local datetime string (no Z/UTC suffix).
+   * Google Calendar interprets this as the time in this.timezone.
    * Supports: "today", "tomorrow", "tomorrow at 6:00 PM", "in 3 days", "2024-12-25", etc.
    */
   _parseDeadline(deadlineStr) {
-    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+
+    // Get "now" expressed in the user's timezone using Intl
+    const nowParts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date());
+    const get = type => parseInt(nowParts.find(p => p.type === type)?.value);
+    let year = get('year'), month = get('month') - 1, day = get('day');
+
     const str = deadlineStr.toLowerCase().trim();
 
-    // Extract time component if present (e.g., "tomorrow at 6:00 PM" or "tmr 6pm")
-    let timeStr = '';
-    let dateStr = str;
-    const timeMatch = str.match(/(?:at|@)?\s*(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+    // Extract time component (e.g. "6:00 PM", "6pm", "at 18:00")
+    let hours = 9, minutes = 0;
+    const timeMatch = str.match(/(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
     if (timeMatch) {
-      timeStr = timeMatch[0];
-      dateStr = str.replace(timeMatch[0], '').trim();
+      hours = parseInt(timeMatch[1]);
+      minutes = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+      const ampm = (timeMatch[3] || '').toLowerCase();
+      if (ampm === 'pm' && hours !== 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
     }
 
-    // Parse time component
-    let hours = 9;
-    let minutes = 0;
-    if (timeStr) {
-      const hourMatch = timeStr.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
-      if (hourMatch) {
-        hours = parseInt(hourMatch[1]);
-        minutes = hourMatch[2] ? parseInt(hourMatch[2]) : 0;
-        const ampm = (hourMatch[3] || '').toLowerCase();
-        if (ampm === 'pm' && hours !== 12) hours += 12;
-        if (ampm === 'am' && hours === 12) hours = 0;
-      }
-    }
+    // Extract date component
+    const dateStr = str.replace(/(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?/i, '').trim();
 
-    // Parse date component
-    let targetDate = new Date(now);
-    if (dateStr.includes('today')) {
-      // Today at specified time
-    } else if (dateStr.includes('tomorrow') || dateStr.includes('tmr')) {
-      targetDate.setDate(targetDate.getDate() + 1);
+    if (dateStr.includes('tomorrow') || dateStr.includes('tmr')) {
+      const d = new Date(year, month, day + 1);
+      year = d.getFullYear(); month = d.getMonth(); day = d.getDate();
     } else if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
-      // Parse "2024-12-25"
-      const [year, month, day] = dateStr.split('-').map(Number);
-      targetDate = new Date(year, month - 1, day);
+      const [y, m, d] = dateStr.split('-').map(Number);
+      year = y; month = m - 1; day = d;
     } else if (dateStr.match(/in (\d+) days?/)) {
-      // "in X days"
-      const daysMatch = dateStr.match(/in (\d+) days?/);
-      const days = parseInt(daysMatch[1]);
-      targetDate.setDate(targetDate.getDate() + days);
+      const days = parseInt(dateStr.match(/in (\d+) days?/)[1]);
+      const d = new Date(year, month, day + days);
+      year = d.getFullYear(); month = d.getMonth(); day = d.getDate();
     }
+    // "today" or no date → keep current day
 
-    return new Date(
-      targetDate.getFullYear(),
-      targetDate.getMonth(),
-      targetDate.getDate(),
-      hours,
-      minutes
-    );
+    const dateTimeStr = `${year}-${pad(month + 1)}-${pad(day)}T${pad(hours)}:${pad(minutes)}:00`;
+    console.log(`[DEBUG] Deadline input: "${deadlineStr}" → ${dateTimeStr} (${this.timezone})`);
+    return dateTimeStr;
+  }
+
+  /**
+   * Add a number of hours to a local datetime string (no timezone suffix).
+   */
+  _addHours(dateTimeStr, hours) {
+    const pad = n => String(n).padStart(2, '0');
+    const d = new Date(dateTimeStr); // parsed as local server time, only used for arithmetic
+    d.setMinutes(d.getMinutes() + Math.round(hours * 60));
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:00`;
   }
 }
 

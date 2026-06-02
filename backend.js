@@ -541,7 +541,8 @@ async function getCalendarForUser(userId) {
       const userCalendar = new GoogleCalendarSync({
         credentials: googleCalendar.credentials,
         tokenJson: userToken,
-        calendarId: 'primary'
+        calendarId: 'primary',
+        timezone: process.env.USER_TIMEZONE || 'Asia/Singapore'
       });
       await userCalendar.initialize();
 
@@ -636,7 +637,8 @@ async function initializeIntegrations() {
         credentials: googleCredentials,
         tokenPath: process.env.GOOGLE_TOKEN_PATH || './google-token.json',
         tokenJson: googleTokenJson,
-        calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary'
+        calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary',
+        timezone: process.env.USER_TIMEZONE || 'Asia/Singapore'
       });
       await googleCalendar.initialize();
       console.log('✅ Google Calendar initialized');
