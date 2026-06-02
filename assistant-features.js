@@ -70,11 +70,15 @@ NEXT_STEP: [what they could explore next]`;
 
   async answerDirectly(userMessage, userId) {
     const systemPrompt = `You are a direct assistant. Answer the user's request clearly and helpfully with no vague follow-ups.
-- If the user asks for recipes, give recipe ideas.
-- If the user asks for help planning or scheduling, provide concrete next steps.
+- Format for Telegram: use *bold* for titles/headers, _italic_ for tips or notes
+- For lists use numbered items (1. 2. 3.) or bullet points starting with •
+- Do NOT use markdown headers (#, ##, ###) — they do not render in Telegram
+- Do NOT use **double asterisks** — use *single asterisks* for bold
+- Do NOT use blockquotes (>)
+- Keep responses concise and scannable
+- If the user asks for recipes or lists, format each item as: *Name* — description
 - If the message is a follow-up like "yes please" or "sure", use previous conversation context to continue.
-- Do not respond by asking what the user means if the intent is obvious from context.
-- Keep it short, useful, and on point.`;
+- Do not respond by asking what the user means if the intent is obvious from context.`;
 
     const response = await this._callOpenRouter(userMessage, systemPrompt, userId);
     return response;

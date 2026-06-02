@@ -338,6 +338,16 @@ class MessagingIntegration {
     return { blocks };
   }
 
+  // Convert common markdown that Telegram doesn't support into Telegram-compatible format
+  _toTelegramMarkdown(text) {
+    return text
+      .replace(/^#{1,3}\s+(.+)$/gm, '*$1*')       // # Heading → *Heading*
+      .replace(/\*\*(.+?)\*\*/g, '*$1*')            // **bold** → *bold*
+      .replace(/^>\s*(.+)$/gm, '_$1_')              // > quote → _italic_
+      .replace(/^[-*]\s+/gm, '• ')                  // - list → • list
+      .replace(/^---+$/gm, '─────────────────');    // --- → visual divider
+  }
+
   _formatTelegramResponse(response, chatId) {
     let text;
 
@@ -366,7 +376,7 @@ class MessagingIntegration {
 
     return {
       chat_id: chatId,
-      text: text,
+      text: this._toTelegramMarkdown(text),
       parse_mode: 'Markdown'
     };
   }
