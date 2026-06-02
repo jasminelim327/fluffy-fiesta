@@ -522,43 +522,50 @@ const pendingOAuthStates = new Map();
 // Returns a per-user GoogleCalendarSync if the user has linked their account,
 // otherwise falls back to the shared server calendar.
 async function getCalendarForUser(userId) {
-  if (!googleCalendar) return null;
-  if (!userId) return googleCalendar;
+  if (!googleCalendar) return { calendar: null, needsConnect: false };
+  if (!userId) return { calendar: googleCalendar, needsConnect: false };
 
   try {
     const profile = await db.getUserProfile(userId);
     const userToken = profile?.googleToken;
-    if (!userToken) return googleCalendar;
 
-    if (!userToken.refresh_token) {
-      console.warn(`⚠️ User ${userId} has no refresh_token — calendar sync skipped. Ask them to "connect google" again.`);
-      return null;
+    // User has their own linked calendar with a valid refresh token
+    if (userToken?.refresh_token) {
+      const GoogleCalendarSync = require('./google-calendar');
+      const userCalendar = new GoogleCalendarSync({
+        credentials: googleCalendar.credentials,
+        tokenJson: userToken,
+        calendarId: 'primary'
+      });
+      await userCalendar.initialize();
+
+      // Persist refreshed access tokens automatically so they don't expire
+      userCalendar.auth.on('tokens', async (newTokens) => {
+        try {
+          const latest = (await db.getUserProfile(userId)) || {};
+          latest.googleToken = { ...latest.googleToken, ...newTokens };
+          await db.saveUserProfile(userId, latest);
+          console.log(`✅ Refreshed Google token saved for user ${userId}`);
+        } catch (err) {
+          console.error('Failed to persist refreshed token:', err.message);
+        }
+      });
+
+      return { calendar: userCalendar, needsConnect: false };
     }
 
-    const GoogleCalendarSync = require('./google-calendar');
-    const userCalendar = new GoogleCalendarSync({
-      credentials: googleCalendar.credentials,
-      tokenJson: userToken,
-      calendarId: 'primary'
-    });
-    await userCalendar.initialize();
+    // Fall back to the shared server calendar only if it has a refresh token
+    const sharedCreds = googleCalendar.auth?.credentials;
+    if (sharedCreds?.refresh_token) {
+      return { calendar: googleCalendar, needsConnect: false };
+    }
 
-    // Persist refreshed access tokens automatically so they don't expire
-    userCalendar.auth.on('tokens', async (newTokens) => {
-      try {
-        const latest = (await db.getUserProfile(userId)) || {};
-        latest.googleToken = { ...latest.googleToken, ...newTokens };
-        await db.saveUserProfile(userId, latest);
-        console.log(`✅ Refreshed Google token saved for user ${userId}`);
-      } catch (err) {
-        console.error('Failed to persist refreshed token:', err.message);
-      }
-    });
-
-    return userCalendar;
+    // No usable calendar — shared token has no refresh_token and user hasn't connected
+    console.warn(`⚠️ No Google Calendar for user ${userId} — shared token has no refresh_token`);
+    return { calendar: null, needsConnect: true };
   } catch (err) {
-    console.warn('Could not load per-user calendar, falling back to shared:', err.message);
-    return googleCalendar;
+    console.warn('Could not load per-user calendar:', err.message);
+    return { calendar: null, needsConnect: false };
   }
 }
 
@@ -652,14 +659,24 @@ async function initializeIntegrations() {
 async function syncTask(actionData, userId) {
   const promises = [];
 
-  // Use per-user calendar if the user has linked their Google account,
-  // otherwise fall back to the shared server calendar.
-  const calendar = await getCalendarForUser(userId);
+  const { calendar, needsConnect } = await getCalendarForUser(userId);
+
   if (calendar) {
     promises.push(
       calendar.addEvent(actionData)
         .catch(err => console.error('Google Calendar sync failed:', err.message))
     );
+  } else if (needsConnect && userId) {
+    // Let the user know their task was saved but calendar isn't linked yet
+    const profile = await db.getUserProfile(userId).catch(() => null);
+    const chatId = profile?.telegramChatId;
+    if (chatId && TELEGRAM_TOKEN) {
+      axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+        chat_id: chatId,
+        text: '📅 *Task saved!* Your Google Calendar isn\'t connected yet.\n\nSend *"connect google"* to link it and sync tasks automatically.',
+        parse_mode: 'Markdown'
+      }).catch(err => console.error('Calendar nudge failed:', err.message));
+    }
   }
 
   if (appleCalendar) {

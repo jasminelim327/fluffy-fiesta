@@ -35,15 +35,17 @@ class GoogleCalendarSync {
         redirect_uris[0]
       );
 
-      // Try to load stored token from file or in-memory JSON
-      if (fs.existsSync(this.tokenPath)) {
+      // Prefer explicit tokenJson (per-user tokens) over the shared file token.
+      // This prevents the shared ./google-token.json from overriding a user's
+      // personal token when creating per-user calendar instances.
+      if (this.tokenJson) {
+        this.auth.setCredentials(this.tokenJson);
+        console.log('✅ Google Calendar authenticated using token JSON');
+      } else if (fs.existsSync(this.tokenPath)) {
         const token = JSON.parse(fs.readFileSync(this.tokenPath, 'utf8'));
         this.auth.setCredentials(token);
         this.tokenJson = token;
-        console.log('✅ Google Calendar authenticated');
-      } else if (this.tokenJson) {
-        this.auth.setCredentials(this.tokenJson);
-        console.log('✅ Google Calendar authenticated using token JSON');
+        console.log('✅ Google Calendar authenticated from file');
       } else {
         console.log('⚠️ No token found. Run generateAuthUrl() first');
         return false;
