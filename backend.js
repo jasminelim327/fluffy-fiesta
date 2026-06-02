@@ -288,15 +288,13 @@ app.get('/google/oauth/callback', async (req, res) => {
         console.warn(`⚠️ No refresh_token returned for user ${userId}. User may need to revoke app access and reconnect.`);
       }
 
-      // Persist token to user profile
-      const existing = await db.getUserProfile(userId);
-      const profile = existing || {};
-      profile.googleToken = tokens;
-      await db.saveUserProfile(userId, profile);
+      // Persist token in its own dedicated table — isolated from the user profile
+      // blob so FriendlyAssistant saves can never accidentally overwrite it.
+      await db.saveGoogleToken(userId, tokens);
 
-      // Verify the save was successful
-      const saved = await db.getUserProfile(userId);
-      console.log(`[OAuth] verify save for user ${userId}: googleToken=${saved?.googleToken ? 'present' : 'MISSING'}`);
+      // Verify the save
+      const saved = await db.getGoogleToken(userId);
+      console.log(`[OAuth] verify save for user ${userId}: token=${saved ? 'present' : 'MISSING'}, refresh_token=${saved?.refresh_token ? 'yes' : 'no'}`);
 
       console.log(`✅ Google Calendar linked for Telegram user ${userId}`);
 
@@ -533,8 +531,7 @@ async function getCalendarForUser(userId) {
   if (!userId) return { calendar: googleCalendar, needsConnect: false };
 
   try {
-    const profile = await db.getUserProfile(userId);
-    const userToken = profile?.googleToken;
+    const userToken = await db.getGoogleToken(userId);
 
     console.log(`[DEBUG] getCalendarForUser ${userId}: token=${userToken ? 'found' : 'null'}, refresh_token=${userToken?.refresh_token ? 'yes' : 'no'}`);
 
@@ -551,9 +548,8 @@ async function getCalendarForUser(userId) {
       // Persist refreshed access tokens automatically so they don't expire
       userCalendar.auth.on('tokens', async (newTokens) => {
         try {
-          const latest = (await db.getUserProfile(userId)) || {};
-          latest.googleToken = { ...latest.googleToken, ...newTokens };
-          await db.saveUserProfile(userId, latest);
+          const existing = await db.getGoogleToken(userId) || {};
+          await db.saveGoogleToken(userId, { ...existing, ...newTokens });
           console.log(`✅ Refreshed Google token saved for user ${userId}`);
         } catch (err) {
           console.error('Failed to persist refreshed token:', err.message);

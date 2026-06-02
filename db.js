@@ -27,6 +27,16 @@ async function initializeDatabase() {
     );
   `);
 
+  // Separate table for Google OAuth tokens — isolated from the profile blob
+  // so FriendlyAssistant can never accidentally overwrite them.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_google_tokens (
+      user_id TEXT PRIMARY KEY,
+      token JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   console.log('✅ Database initialized');
 }
 
@@ -38,9 +48,7 @@ async function getUserProfile(userId) {
       'SELECT profile FROM user_profiles WHERE user_id = $1',
       [String(userId)]
     );
-    const profile = rows[0]?.profile || null;
-    console.log(`[DB] getUserProfile(${userId}): ${profile ? 'found' : 'null'}`);
-    return profile;
+    return rows[0]?.profile || null;
   } catch (err) {
     console.error(`[DB] getUserProfile(${userId}) error:`, err.message);
     return null;
@@ -58,15 +66,51 @@ async function saveUserProfile(userId, profile) {
        DO UPDATE SET profile = EXCLUDED.profile, updated_at = NOW()`,
       [String(userId), JSON.stringify(profile)]
     );
-    console.log(`[DB] saveUserProfile(${userId}): saved keys=[${Object.keys(profile).join(',')}]`);
   } catch (err) {
     console.error(`[DB] saveUserProfile(${userId}) error:`, err.message);
     throw err;
   }
 }
 
+// Google OAuth tokens are stored separately so profile saves can never overwrite them.
+
+async function saveGoogleToken(userId, token) {
+  if (!pool) return;
+
+  try {
+    await pool.query(
+      `INSERT INTO user_google_tokens (user_id, token)
+       VALUES ($1, $2::jsonb)
+       ON CONFLICT (user_id)
+       DO UPDATE SET token = EXCLUDED.token, updated_at = NOW()`,
+      [String(userId), JSON.stringify(token)]
+    );
+    console.log(`[DB] saveGoogleToken(${userId}): refresh_token=${token.refresh_token ? 'yes' : 'no'}`);
+  } catch (err) {
+    console.error(`[DB] saveGoogleToken(${userId}) error:`, err.message);
+    throw err;
+  }
+}
+
+async function getGoogleToken(userId) {
+  if (!pool) return null;
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT token FROM user_google_tokens WHERE user_id = $1',
+      [String(userId)]
+    );
+    return rows[0]?.token || null;
+  } catch (err) {
+    console.error(`[DB] getGoogleToken(${userId}) error:`, err.message);
+    return null;
+  }
+}
+
 module.exports = {
   initializeDatabase,
   getUserProfile,
-  saveUserProfile
+  saveUserProfile,
+  saveGoogleToken,
+  getGoogleToken
 };
