@@ -6,7 +6,9 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
+const fs = require('fs');
 const bodyParser = require('body-parser');
+const db = require('./db');
 const MessagingIntegration = require('./slack-telegram-integration');
 
 const app = express();
@@ -242,6 +244,56 @@ if (SLACK_TOKEN && SLACK_SECRET) {
   console.log('⚠️ Slack integration disabled: set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET to enable it.');
 }
 
+app.get('/google/oauth', async (req, res) => {
+  if (!googleCalendar) {
+    return res.status(500).send('Google Calendar credentials are not configured.');
+  }
+
+  try {
+    await googleCalendar.initialize();
+    const authUrl = googleCalendar.generateAuthUrl();
+    if (!authUrl) {
+      return res.status(500).send('Unable to generate Google auth URL. Check credentials and redirect URIs.');
+    }
+    res.redirect(authUrl);
+  } catch (error) {
+    console.error('Google OAuth URL error:', error.message || error);
+    res.status(500).send('Could not generate Google OAuth URL.');
+  }
+});
+
+app.get('/google/oauth/callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) {
+    return res.status(400).send('Missing code in callback request.');
+  }
+
+  if (!googleCalendar) {
+    return res.status(500).send('Google Calendar credentials are not configured.');
+  }
+
+  try {
+    await googleCalendar.initialize();
+    const success = await googleCalendar.setAuthCode(code);
+    if (!success) {
+      return res.status(500).send('Failed to exchange Google code for token.');
+    }
+
+    const tokenJson = googleCalendar.tokenJson || null;
+    const tokenSaved = fs.existsSync(process.env.GOOGLE_TOKEN_PATH || './google-token.json');
+
+    res.send(`
+      <h1>Google Calendar connected</h1>
+      <p>Token ${tokenSaved ? 'saved to file' : 'generated'} successfully.</p>
+      <p>If you are using Render, copy the token JSON below into your <strong>GOOGLE_TOKEN_JSON</strong> secret.</p>
+      <pre>${JSON.stringify(tokenJson, null, 2)}</pre>
+    `);
+  } catch (error) {
+    console.error('Google OAuth callback error:', error.response?.data || error.message || error);
+    res.status(500).send('Google OAuth callback failed. Check the server logs.');
+  }
+});
+
 async function processAndReplySlack(userText, userId, channelId = '@' + userId) {
   try {
     const actionData = await processMessage(userText);
@@ -420,13 +472,26 @@ let messagingIntegration = null;
 
 async function initializeIntegrations() {
   // Google Calendar
-  if (process.env.GOOGLE_CREDENTIALS_PATH) {
+  const googleCredentialsJson = process.env.GOOGLE_CREDENTIALS_JSON ? JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON) : null;
+  const googleCredentialsPath = process.env.GOOGLE_CREDENTIALS_PATH;
+  let googleCredentials = googleCredentialsJson;
+
+  if (!googleCredentials && googleCredentialsPath) {
+    try {
+      googleCredentials = require(googleCredentialsPath);
+    } catch (err) {
+      console.warn('⚠️ Could not load GOOGLE_CREDENTIALS_PATH:', err.message);
+    }
+  }
+
+  if (googleCredentials) {
     try {
       const GoogleCalendarSync = require('./google-calendar');
-      const credentials = require(process.env.GOOGLE_CREDENTIALS_PATH);
+      const googleTokenJson = process.env.GOOGLE_TOKEN_JSON ? JSON.parse(process.env.GOOGLE_TOKEN_JSON) : null;
       googleCalendar = new GoogleCalendarSync({
-        credentials: credentials,
+        credentials: googleCredentials,
         tokenPath: process.env.GOOGLE_TOKEN_PATH || './google-token.json',
+        tokenJson: googleTokenJson,
         calendarId: process.env.GOOGLE_CALENDAR_ID || 'primary'
       });
       await googleCalendar.initialize();
@@ -534,13 +599,18 @@ app.listen(PORT, async () => {
   
   // Initialize integrations
   await initializeIntegrations();
+
+  // Initialize persistence layer
+  await db.initializeDatabase();
+
   // Instantiate the messaging integration that wires assistant features to Slack/Telegram
   try {
     messagingIntegration = new MessagingIntegration({
       openrouterKey: OPENROUTER_KEY,
       openrouterModel: process.env.OPENROUTER_MODEL,
       slackToken: SLACK_TOKEN,
-      telegramToken: TELEGRAM_TOKEN
+      telegramToken: TELEGRAM_TOKEN,
+      calendarSync: googleCalendar
     });
     console.log('✅ Messaging integration initialized');
   } catch (err) {

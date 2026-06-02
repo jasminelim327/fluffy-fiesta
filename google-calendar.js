@@ -9,6 +9,7 @@ class GoogleCalendarSync {
   constructor(config) {
     this.credentials = config.credentials; // OAuth2 credentials JSON
     this.tokenPath = config.tokenPath || './google-token.json';
+    this.tokenJson = config.tokenJson || null;
     this.calendarId = config.calendarId || 'primary'; // 'primary' = default calendar
     this.auth = null;
   }
@@ -19,7 +20,14 @@ class GoogleCalendarSync {
    */
   async initialize() {
     try {
-      const { client_secret, client_id, redirect_uris } = this.credentials.installed;
+      const creds = this.credentials.installed || this.credentials.web || {};
+      const { client_secret, client_id, redirect_uris } = creds;
+
+      if (!client_id || !client_secret || !redirect_uris || redirect_uris.length === 0) {
+        console.error('❌ Google OAuth credentials are missing required fields.');
+        console.error('Use a Desktop OAuth client or a Web OAuth client with redirect_uris configured.');
+        return false;
+      }
 
       this.auth = new google.auth.OAuth2(
         client_id,
@@ -27,11 +35,15 @@ class GoogleCalendarSync {
         redirect_uris[0]
       );
 
-      // Try to load stored token
+      // Try to load stored token from file or in-memory JSON
       if (fs.existsSync(this.tokenPath)) {
         const token = JSON.parse(fs.readFileSync(this.tokenPath, 'utf8'));
         this.auth.setCredentials(token);
+        this.tokenJson = token;
         console.log('✅ Google Calendar authenticated');
+      } else if (this.tokenJson) {
+        this.auth.setCredentials(this.tokenJson);
+        console.log('✅ Google Calendar authenticated using token JSON');
       } else {
         console.log('⚠️ No token found. Run generateAuthUrl() first');
         return false;
@@ -71,10 +83,15 @@ class GoogleCalendarSync {
     try {
       const { tokens } = await this.auth.getToken(code);
       this.auth.setCredentials(tokens);
+      this.tokenJson = tokens;
 
-      // Save token for future use
-      fs.writeFileSync(this.tokenPath, JSON.stringify(tokens));
-      console.log('✅ Token saved. You can now use the calendar.');
+      // Save token for future use if file storage is available
+      try {
+        fs.writeFileSync(this.tokenPath, JSON.stringify(tokens));
+        console.log('✅ Token saved to file. You can now use the calendar.');
+      } catch (writeError) {
+        console.warn('⚠️ Could not save token to file:', writeError.message);
+      }
 
       return true;
     } catch (error) {
@@ -109,7 +126,7 @@ class GoogleCalendarSync {
         reminders: {
           useDefault: false,
           overrides: [
-            { method: 'notification', minutes: 30 },
+            { method: 'popup', minutes: 30 },
             { method: 'popup', minutes: 10 }
           ]
         }
@@ -139,6 +156,51 @@ class GoogleCalendarSync {
   /**
    * Get upcoming events
    */
+  async addRecurringEvent(actionData, count = 30, durationMinutes = 30) {
+    try {
+      if (!this.auth) await this.initialize();
+
+      const calendar = google.calendar({ version: 'v3', auth: this.auth });
+      const eventTime = this._parseDeadline(actionData.deadline);
+      const event = {
+        summary: actionData.action,
+        description: actionData.motivation,
+        start: {
+          dateTime: eventTime.toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        end: {
+          dateTime: new Date(eventTime.getTime() + durationMinutes * 60 * 1000).toISOString(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        },
+        recurrence: [`RRULE:FREQ=DAILY;COUNT=${count}`],
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: 'popup', minutes: 30 },
+            { method: 'popup', minutes: 10 }
+          ]
+        },
+        colorId: {
+          high: '11',
+          medium: '5',
+          low: '2'
+        }[actionData.priority] || '5'
+      };
+
+      const response = await calendar.events.insert({
+        calendarId: this.calendarId,
+        resource: event
+      });
+
+      console.log('✅ Added recurring Google Calendar event:', actionData.action);
+      return response.data.id;
+    } catch (error) {
+      console.error('❌ Google Calendar recurring event error:', error.message);
+      throw error;
+    }
+  }
+
   async getUpcomingEvents(maxResults = 10) {
     try {
       if (!this.auth) await this.initialize();

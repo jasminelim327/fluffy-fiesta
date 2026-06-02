@@ -11,6 +11,7 @@ class MessagingIntegration {
     });
     this.slackToken = config.slackToken;
     this.telegramToken = config.telegramToken;
+    this.calendarSync = config.calendarSync;
   }
 
   // ============================================
@@ -22,6 +23,10 @@ class MessagingIntegration {
     const text = message.toLowerCase();
 
     // Parse intent from casual message
+    if (text.includes('help') || text.includes('commands') || text.includes('what can i say') || text.includes('what can i do') || text.includes('show me commands')) {
+      return this._formatTelegramResponse(this._helpMessage(), chatId);
+    }
+
     if (text.includes('deepen') || text.includes('idea')) {
       response = await this.assistant.deepenIdea(message, userId);
       return this._formatTelegramResponse(response, chatId);
@@ -42,15 +47,20 @@ class MessagingIntegration {
           minutes,
           description: desc || 'daily practice'
         });
-        return this._formatTelegramResponse(response, chatId);
-      }
-    }
 
-    if (text.includes('did') || text.includes('completed')) {
-      // Extract: "did 45 min" or "completed 30 minutes"
-      const match = message.match(/(\d+)\s*(min|minute)/i);
-      if (match) {
-        response = await this.assistant.logDailyCommitment(userId, parseInt(match[1]));
+        if (this.calendarSync && response.commitment) {
+          try {
+            await this.calendarSync.addRecurringEvent({
+              action: `Daily habit: ${response.commitment.description}`,
+              deadline: 'tomorrow',
+              priority: 'medium',
+              motivation: `Daily habit reminder for ${response.commitment.description}`
+            }, 30, response.commitment.minutes || 30);
+          } catch (err) {
+            console.error('Calendar habit event failed:', err.message || err);
+          }
+        }
+
         return this._formatTelegramResponse(response, chatId);
       }
     }
@@ -376,6 +386,25 @@ class MessagingIntegration {
     } catch (error) {
       console.error('Telegram typing action error:', error.message);
     }
+  }
+
+  _helpMessage() {
+    return `Here are some commands I understand:
+
+• Set a daily commitment:
+  "Set a daily commitment to 15 min writing"
+• Log progress:
+  "I completed 15 min"
+• Check streaks:
+  "Show my streak"
+• Find forgotten tasks:
+  "Remind me about forgotten goals"
+• Get a review:
+  "Give me a weekly review"
+• Schedule something:
+  "Schedule a meeting tomorrow at 3pm"
+• Ask for help again:
+  "Help" or "What can I say?"`
   }
 }
 

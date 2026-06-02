@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node backend.js",
     "dev": "nodemon backend.js",
+    "google-auth": "node scripts/google-auth.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -23,7 +24,8 @@
     "body-parser": "^1.20.2",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
-    "googleapis": "^118.0.0"
+    "googleapis": "^118.0.0",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

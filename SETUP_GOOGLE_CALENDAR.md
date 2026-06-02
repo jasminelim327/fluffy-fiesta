@@ -26,10 +26,15 @@
    - Choose "External"
    - Fill in app name, user support email
    - Skip optional fields, save
-4. Back to Credentials → Create → OAuth client ID → "Desktop application"
-5. Click "Create"
-6. Click the download icon (looks like ⬇️)
-7. Save as `credentials.json` in your project folder
+4. Choose the OAuth client type you need:
+   - **Desktop application** for local testing with `npm run google-auth`
+   - **Web application** if you want deployed auth flow
+5. If you choose Web application, add a redirect URI:
+   - Local dev: `http://localhost:3000/google/oauth/callback`
+   - Render deploy: `https://<your-render-service>.onrender.com/google/oauth/callback`
+6. Click "Create"
+7. Click the download icon (looks like ⬇️)
+8. Save as `credentials.json` in your project folder
 
 ### 4. Update .env
 ```env
@@ -38,35 +43,34 @@ GOOGLE_TOKEN_PATH=./google-token.json
 GOOGLE_CALENDAR_ID=primary
 ```
 
+If you want to keep credentials and token data in Render secrets instead of local files, you can also set:
+```env
+GOOGLE_CREDENTIALS_JSON="{...}"
+GOOGLE_TOKEN_JSON="{...}"
+```
+
+For deployed web OAuth, the callback route is:
+- `https://<your-app>.onrender.com/google/oauth/callback`
+
+If you use a Web application client on Google Cloud Console, make sure that exact callback URL is added to your credential redirect URIs.
+
 ### 5. Get OAuth Token
-```bash
-node -e "
-const GoogleCalendarSync = require('./google-calendar');
-const credentials = require('./credentials.json');
-const google = new GoogleCalendarSync({ credentials });
+Use the repo helper script to generate the authorization URL and save your token.
 
-const authUrl = google.generateAuthUrl();
-console.log('Visit:', authUrl);
-"
+```bash
+npm run google-auth
 ```
 
-1. Copy the URL
-2. Paste in browser
-3. Sign in with your Google account
-4. Click "Allow"
-5. Copy the authorization code from the redirect URL
-6. Run:
+1. Copy the URL printed by the helper script
+2. Paste it in your browser
+3. Sign in with your Google account and allow access
+4. Copy the authorization code from the redirect URL
+5. Run:
 ```bash
-node -e "
-const GoogleCalendarSync = require('./google-calendar');
-const credentials = require('./credentials.json');
-const google = new GoogleCalendarSync({ credentials });
-
-google.setAuthCode('PASTE_CODE_HERE').then(() => {
-  console.log('✅ Ready to use!');
-});
-"
+npm run google-auth -- --code YOUR_CODE
 ```
+
+The script saves the token to `google-token.json`, and your app can then add events to Google Calendar automatically.
 
 ### 6. Test
 ```bash

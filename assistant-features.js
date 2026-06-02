@@ -2,6 +2,7 @@
 // Enhanced personal assistant that deeply engages with your goals
 
 const axios = require('axios');
+const db = require('./db');
 
 class FriendlyAssistant {
   constructor(config) {
@@ -37,10 +38,11 @@ class FriendlyAssistant {
     const systemPrompt = `You are an enthusiastic friend who helps people dive deeper into their ideas.
 Your job is to:
 1. Listen to their initial idea
-2. Ask probing questions that make them think bigger
+2. Ask probing questions that make them think bigger but also more clearly about their vision
 3. Point out hidden opportunities they haven't considered
 4. Encourage exploration of the idea's potential
 5. Challenge them to think about next steps
+6.  Be informative and inspiring, not vague or generic.
 
 Be conversational, warm, and genuinely curious. Not corporate. Like texting a best friend who believes in them.
 
@@ -91,10 +93,11 @@ NEXT_STEP: [what they could explore next]`;
       streak: 0
     }
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     profile.dailyCommitment = commitment;
-    profile.commitmentHistory = profile.commitmentHistory || [];
+    profile.commitmentHistory = profile.commitmentHistory || {};
     profile.currentStreak = 0;
+    await this._saveProfile(userId, profile);
 
     return {
       message: `✅ Daily commitment set: ${commitment.minutes}min on "${commitment.description}"`,
@@ -103,7 +106,7 @@ NEXT_STEP: [what they could explore next]`;
   }
 
   async logDailyCommitment(userId, minutesCompleted) {
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     if (!profile.dailyCommitment) {
       return { error: 'No daily commitment set' };
     }
@@ -127,6 +130,8 @@ NEXT_STEP: [what they could explore next]`;
     } else {
       profile.currentStreak = 0;
     }
+
+    await this._saveProfile(userId, profile);
 
     return {
       message: completed 
@@ -254,7 +259,7 @@ PERSONAL_NOTE: [warm closing about their potential]`;
     level: 1-10
     context: "morning", "after exercise", "before bed", etc
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     if (!profile.energyLog) profile.energyLog = [];
 
     const entry = {
@@ -266,6 +271,7 @@ PERSONAL_NOTE: [warm closing about their potential]`;
     };
 
     profile.energyLog.push(entry);
+    await this._saveProfile(userId, profile);
 
     // Analyze pattern every 10 entries
     if (profile.energyLog.length % 10 === 0) {
@@ -312,7 +318,7 @@ PERSONAL_NOTE: [warm closing about their potential]`;
       ]
     }
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     if (!profile.longTermGoals) profile.longTermGoals = [];
 
     const goalId = this._generateId();
@@ -325,6 +331,7 @@ PERSONAL_NOTE: [warm closing about their potential]`;
     };
 
     profile.longTermGoals.push(fullGoal);
+    await this._saveProfile(userId, profile);
 
     const systemPrompt = `You are their dream coach. They just set a big goal.
 Acknowledge it, break it down into first steps, and remind them why it matters.
@@ -350,13 +357,14 @@ MOTIVATION: [why this matters beyond money/status]`;
   }
 
   async progressMilestone(userId, goalId, milestoneIndex) {
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     const goal = profile.longTermGoals?.find(g => g.id === goalId);
     
     if (!goal) return { error: 'Goal not found' };
 
     goal.milestonesProgress[milestoneIndex].completed = true;
     goal.milestonesProgress[milestoneIndex].completedDate = new Date().toISOString();
+    await this._saveProfile(userId, profile);
 
     const completedCount = goal.milestonesProgress.filter(m => m.completed).length;
     const totalCount = goal.milestonesProgress.length;
@@ -456,7 +464,7 @@ Show you care about their growth. Be warm and real. One paragraph.`;
   // ============================================
 
   async addAccountabilityPartner(userId, partnerId, sharedGoals) {
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     if (!profile.partners) profile.partners = [];
 
     profile.partners.push({
@@ -466,6 +474,8 @@ Show you care about their growth. Be warm and real. One paragraph.`;
       checkIns: []
     });
 
+    await this._saveProfile(userId, profile);
+
     return {
       message: `🤝 Added accountability partner!`,
       tip: `Share your daily commits. "Show up for each other" creates magic.`
@@ -474,7 +484,7 @@ Show you care about their growth. Be warm and real. One paragraph.`;
 
   async checkInWithPartner(userId, partnerId, message) {
     // Both update each other on progress
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     const partner = profile.partners?.find(p => p.partnerId === partnerId);
 
     if (partner) {
@@ -482,6 +492,7 @@ Show you care about their growth. Be warm and real. One paragraph.`;
         message,
         timestamp: new Date().toISOString()
       });
+      await this._saveProfile(userId, profile);
     }
 
     return {
@@ -555,20 +566,28 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
     }
   }
 
-  _getOrCreateProfile(userId) {
-    if (!this.userProfiles.has(userId)) {
-      this.userProfiles.set(userId, {
-        userId,
-        created: new Date().toISOString(),
-        allTasks: [],
-        currentStreak: 0,
-        commitmentHistory: {},
-        energyLog: [],
-        longTermGoals: [],
-        partners: []
-      });
-    }
-    return this.userProfiles.get(userId);
+  async _getOrCreateProfile(userId) {
+    if (this.userProfiles.has(userId)) return this.userProfiles.get(userId);
+
+    const persisted = await db.getUserProfile(userId);
+    const profile = persisted || {
+      userId,
+      created: new Date().toISOString(),
+      allTasks: [],
+      currentStreak: 0,
+      commitmentHistory: {},
+      energyLog: [],
+      longTermGoals: [],
+      partners: []
+    };
+
+    this.userProfiles.set(userId, profile);
+    return profile;
+  }
+
+  async _saveProfile(userId, profile) {
+    this.userProfiles.set(userId, profile);
+    await db.saveUserProfile(userId, profile);
   }
 
   _parseAdvancedResponse(response) {
