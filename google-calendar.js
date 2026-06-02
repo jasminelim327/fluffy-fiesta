@@ -69,7 +69,8 @@ class GoogleCalendarSync {
     const scopes = ['https://www.googleapis.com/auth/calendar'];
     const authUrl = this.auth.generateAuthUrl({
       access_type: 'offline',
-      scope: scopes
+      scope: scopes,
+      prompt: 'consent' // Force consent screen to ensure refresh_token is issued
     });
 
     console.log('Visit this URL to authorize:\n', authUrl);
@@ -281,38 +282,59 @@ class GoogleCalendarSync {
 
   /**
    * Parse deadline string to Date
+   * Supports: "today", "tomorrow", "tomorrow at 6:00 PM", "in 3 days", "2024-12-25", etc.
    */
   _parseDeadline(deadlineStr) {
     const now = new Date();
     const str = deadlineStr.toLowerCase().trim();
 
-    if (str === 'today') {
-      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0);
+    // Extract time component if present (e.g., "tomorrow at 6:00 PM" or "tmr 6pm")
+    let timeStr = '';
+    let dateStr = str;
+    const timeMatch = str.match(/(?:at|@)?\s*(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+    if (timeMatch) {
+      timeStr = timeMatch[0];
+      dateStr = str.replace(timeMatch[0], '').trim();
     }
 
-    if (str === 'tomorrow') {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      return new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 9, 0);
+    // Parse time component
+    let hours = 9;
+    let minutes = 0;
+    if (timeStr) {
+      const hourMatch = timeStr.match(/(\d{1,2}):?(\d{2})?\s*(am|pm)?/i);
+      if (hourMatch) {
+        hours = parseInt(hourMatch[1]);
+        minutes = hourMatch[2] ? parseInt(hourMatch[2]) : 0;
+        const ampm = (hourMatch[3] || '').toLowerCase();
+        if (ampm === 'pm' && hours !== 12) hours += 12;
+        if (ampm === 'am' && hours === 12) hours = 0;
+      }
     }
 
-    // Parse "2024-12-25"
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-      const [year, month, day] = str.split('-').map(Number);
-      return new Date(year, month - 1, day, 9, 0);
-    }
-
-    // "in X days"
-    const daysMatch = str.match(/in (\d+) days?/);
-    if (daysMatch) {
+    // Parse date component
+    let targetDate = new Date(now);
+    if (dateStr.includes('today')) {
+      // Today at specified time
+    } else if (dateStr.includes('tomorrow') || dateStr.includes('tmr')) {
+      targetDate.setDate(targetDate.getDate() + 1);
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+      // Parse "2024-12-25"
+      const [year, month, day] = dateStr.split('-').map(Number);
+      targetDate = new Date(year, month - 1, day);
+    } else if (dateStr.match(/in (\d+) days?/)) {
+      // "in X days"
+      const daysMatch = dateStr.match(/in (\d+) days?/);
       const days = parseInt(daysMatch[1]);
-      const future = new Date(now);
-      future.setDate(future.getDate() + days);
-      return new Date(future.getFullYear(), future.getMonth(), future.getDate(), 9, 0);
+      targetDate.setDate(targetDate.getDate() + days);
     }
 
-    // Default to today 9am
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0);
+    return new Date(
+      targetDate.getFullYear(),
+      targetDate.getMonth(),
+      targetDate.getDate(),
+      hours,
+      minutes
+    );
   }
 }
 
