@@ -274,8 +274,17 @@ app.get('/google/oauth/callback', async (req, res) => {
     pendingOAuthStates.delete(state);
 
     try {
-      await googleCalendar.initialize();
-      const { tokens } = await googleCalendar.auth.getToken(code);
+      // Use a fresh OAuth2 client for token exchange — reusing the shared
+      // googleCalendar.auth can cause "No refresh token" errors if it already
+      // has credentials set, because getToken() skips issuing a refresh_token.
+      const { google } = require('googleapis');
+      const creds = googleCalendar.credentials.installed || googleCalendar.credentials.web || {};
+      const tempAuth = new google.auth.OAuth2(creds.client_id, creds.client_secret, creds.redirect_uris[0]);
+      const { tokens } = await tempAuth.getToken(code);
+
+      if (!tokens.refresh_token) {
+        console.warn(`⚠️ No refresh_token returned for user ${userId}. User may need to revoke app access and reconnect.`);
+      }
 
       // Persist token to user profile
       const profile = (await db.getUserProfile(userId)) || {};
@@ -521,6 +530,11 @@ async function getCalendarForUser(userId) {
     const userToken = profile?.googleToken;
     if (!userToken) return googleCalendar;
 
+    if (!userToken.refresh_token) {
+      console.warn(`⚠️ User ${userId} has no refresh_token — calendar sync skipped. Ask them to "connect google" again.`);
+      return null;
+    }
+
     const GoogleCalendarSync = require('./google-calendar');
     const userCalendar = new GoogleCalendarSync({
       credentials: googleCalendar.credentials,
@@ -528,6 +542,19 @@ async function getCalendarForUser(userId) {
       calendarId: 'primary'
     });
     await userCalendar.initialize();
+
+    // Persist refreshed access tokens automatically so they don't expire
+    userCalendar.auth.on('tokens', async (newTokens) => {
+      try {
+        const latest = (await db.getUserProfile(userId)) || {};
+        latest.googleToken = { ...latest.googleToken, ...newTokens };
+        await db.saveUserProfile(userId, latest);
+        console.log(`✅ Refreshed Google token saved for user ${userId}`);
+      } catch (err) {
+        console.error('Failed to persist refreshed token:', err.message);
+      }
+    });
+
     return userCalendar;
   } catch (err) {
     console.warn('Could not load per-user calendar, falling back to shared:', err.message);

@@ -36,10 +36,22 @@ class MessagingIntegration {
             console.error('Task sync failed:', err.message)
           );
         }
-        const msg = taskData.action
-          ? `✅ Got it!\n<b>${taskData.action}</b>\n📅 ${taskData.deadline}\n🎯 ${(taskData.priority || 'medium').toUpperCase()}\n💪 ${taskData.motivation}`
-          : `I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".`;
-        return { chat_id: chatId, text: msg, parse_mode: 'HTML' };
+        if (!taskData.action) {
+          return { chat_id: chatId, text: 'I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".', parse_mode: 'Markdown' };
+        }
+        const priorityDot = { high: '🔴', medium: '🟡', low: '🟢' }[taskData.priority] || '🟡';
+        const priorityLabel = taskData.priority
+          ? taskData.priority.charAt(0).toUpperCase() + taskData.priority.slice(1)
+          : 'Medium';
+        const msg = [
+          '✅ *Task saved!*',
+          '─────────────────',
+          `📌 *${taskData.action}*`,
+          `📅 ${taskData.deadline}`,
+          `${priorityDot} ${priorityLabel} priority`,
+          `💬 _${taskData.motivation}_`
+        ].join('\n');
+        return { chat_id: chatId, text: msg, parse_mode: 'Markdown' };
       }
 
       case 'idea':
