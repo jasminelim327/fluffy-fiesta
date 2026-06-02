@@ -197,10 +197,6 @@ function parseResponse(text) {
   return result;
 }
 
-function isTaskMessage(text) {
-  return /(schedule|calendar|appointment|meeting|remind|task|deadline|todo|to do|buy|book|call|meet|plan|plan to)/i.test(text);
-}
-
 // ============================================
 // SLACK HANDLERS
 // ============================================
@@ -263,7 +259,7 @@ app.get('/google/oauth', async (req, res) => {
 });
 
 app.get('/google/oauth/callback', async (req, res) => {
-  const code = req.query.code;
+  const { code, state } = req.query;
   if (!code) {
     return res.status(400).send('Missing code in callback request.');
   }
@@ -272,6 +268,44 @@ app.get('/google/oauth/callback', async (req, res) => {
     return res.status(500).send('Google Calendar credentials are not configured.');
   }
 
+  // ── Per-user flow (initiated from Telegram) ──────────────────────────────
+  if (state && pendingOAuthStates.has(state)) {
+    const { userId, chatId } = pendingOAuthStates.get(state);
+    pendingOAuthStates.delete(state);
+
+    try {
+      await googleCalendar.initialize();
+      const { tokens } = await googleCalendar.auth.getToken(code);
+
+      // Persist token to user profile
+      const profile = (await db.getUserProfile(userId)) || {};
+      profile.googleToken = tokens;
+      await db.saveUserProfile(userId, profile);
+
+      console.log(`✅ Google Calendar linked for Telegram user ${userId}`);
+
+      // Notify user in Telegram
+      if (chatId && TELEGRAM_TOKEN) {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+          chat_id: chatId,
+          text: '✅ <b>Google Calendar connected!</b>\n\nYour tasks will now be added to your personal Google Calendar automatically.',
+          parse_mode: 'HTML'
+        }).catch(err => console.error('Telegram confirmation failed:', err.message));
+      }
+
+      return res.send(`
+        <html><body style="font-family:sans-serif;max-width:480px;margin:80px auto;text-align:center">
+          <h1>✅ Connected!</h1>
+          <p>Your Google Calendar is now linked. You can close this tab and return to Telegram.</p>
+        </body></html>
+      `);
+    } catch (error) {
+      console.error('Per-user OAuth callback error:', error.response?.data || error.message);
+      return res.status(500).send('OAuth failed. Please try the "connect google" command again in Telegram.');
+    }
+  }
+
+  // ── Shared server flow (admin setup) ─────────────────────────────────────
   try {
     await googleCalendar.initialize();
     const success = await googleCalendar.setAuthCode(code);
@@ -317,9 +351,7 @@ async function processAndReplySlack(userText, userId, channelId = '@' + userId) 
       }
     });
 
-    // TODO: Add to calendar/Notion here
-    addToCalendar(actionData);
-    addToNotes(actionData, userId);
+    syncTask(actionData, userId);
 
   } catch (error) {
     console.error('Slack processing error:', error.message);
@@ -332,7 +364,6 @@ async function processAndReplySlack(userText, userId, channelId = '@' + userId) 
 
 app.post('/telegram/webhook', async (req, res) => {
   const update = req.body;
-
   console.log('Telegram webhook received update:', JSON.stringify(update?.message?.text || update));
 
   if (update.message?.text) {
@@ -343,33 +374,23 @@ app.post('/telegram/webhook', async (req, res) => {
     res.send('OK');
 
     try {
-      if (messagingIntegration && !isTaskMessage(text)) {
-        console.log('Sending Telegram typing indicator for:', text);
-        await messagingIntegration.sendTelegramTyping(chatId);
-        console.log('Routing Telegram message through MessagingIntegration:', text);
+      await sendTelegramTyping(chatId);
+
+      if (messagingIntegration) {
+        // Store chatId in user profile for proactive reminders
+        messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
+          .catch(err => console.error('Profile meta update failed:', err.message));
+
         const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
         await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text);
-        return;
-      }
-
-      console.log('Sending Telegram typing indicator for fallback/task handling:', text);
-      await sendTelegramTyping(chatId);
-      console.log('Processing Telegram message (fallback/task):', text);
-      const actionData = await processMessage(text);
-      console.log('Processed actionData:', JSON.stringify(actionData));
-
-      let message;
-      if (actionData.clarification) {
-        message = `I didn't get a task yet. Please tell me something like: "Buy milk tomorrow" or "Schedule a call on Friday".`;
       } else {
-        message = `\n✅ Got it!\n<b>${actionData.action}</b>\n📅 ${actionData.deadline}\n🎯 ${String(actionData.priority || 'medium').toUpperCase()}\n💪 ${actionData.motivation}`;
-      }
-
-      await sendTelegramMessage(chatId, message);
-
-      if (!actionData.clarification) {
-        addToCalendar(actionData);
-        addToNotes(actionData, userId);
+        // Fallback if MessagingIntegration not yet initialized
+        const actionData = await processMessage(text);
+        const message = actionData.clarification
+          ? `I didn't get a task yet. Please tell me something like: "Buy milk tomorrow".`
+          : `\n✅ Got it!\n<b>${actionData.action}</b>\n📅 ${actionData.deadline}\n🎯 ${(actionData.priority || 'medium').toUpperCase()}\n💪 ${actionData.motivation}`;
+        await sendTelegramMessage(chatId, message);
+        if (!actionData.clarification) await syncTask(actionData, userId);
       }
     } catch (error) {
       console.error('Telegram processing error:', error.response?.data || error.message);
@@ -382,46 +403,55 @@ app.post('/telegram/webhook', async (req, res) => {
 // Polling fallback for Telegram (if no webhook)
 async function telegramPolling() {
   let offset = 0;
-  
+  const processedIds = new Set();
+
   setInterval(async () => {
     try {
       const response = await axios.get(
         `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates`,
-        { params: { offset, allowed_updates: ['message'] } }
+        { params: { offset, timeout: 0, allowed_updates: ['message'] } }
       );
 
-      response.data.result.forEach(async (update) => {
+      for (const update of response.data.result) {
+        if (processedIds.has(update.update_id)) {
+          offset = update.update_id + 1;
+          continue;
+        }
+        processedIds.add(update.update_id);
+        offset = update.update_id + 1;
+
         if (update.message?.text) {
           const { text, from, chat } = update.message;
           const userId = from.id;
           const chatId = chat.id;
 
           try {
-            const actionData = await processMessage(text);
-            
-            const message = `
-✅ Got it!
-<b>${actionData.action}</b>
-📅 ${actionData.deadline}
-🎯 ${actionData.priority.toUpperCase()}
-💪 ${actionData.motivation}
-            `;
-
-            await sendTelegramMessage(chatId, message);
-
-            addToCalendar(actionData);
-            addToNotes(actionData, userId);
-
+            await sendTelegramTyping(chatId);
+            if (messagingIntegration) {
+              messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
+                .catch(err => console.error('Profile meta update failed:', err.message));
+              const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
+              await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text);
+            } else {
+              const actionData = await processMessage(text);
+              const message = actionData.clarification
+                ? `I didn't get a task yet. Please tell me something like: "Buy milk tomorrow".`
+                : `\n✅ Got it!\n<b>${actionData.action}</b>\n📅 ${actionData.deadline}\n🎯 ${(actionData.priority || 'medium').toUpperCase()}\n💪 ${actionData.motivation}`;
+              await sendTelegramMessage(chatId, message);
+              if (!actionData.clarification) await syncTask(actionData, userId);
+            }
           } catch (error) {
-            console.error('Error:', error.message);
+            console.error('Polling message error:', error.message);
           }
         }
-        offset = update.update_id + 1;
-      });
+      }
+
+      // Prevent unbounded memory growth
+      if (processedIds.size > 1000) processedIds.clear();
     } catch (error) {
       console.error('Polling error:', error.message);
     }
-  }, 1000);
+  }, 3000);
 }
 
 // ============================================
@@ -469,6 +499,52 @@ let googleCalendar = null;
 let appleCalendar = null;
 let notionManager = null;
 let messagingIntegration = null;
+
+// Tracks in-flight OAuth sessions: state token → { userId, chatId }
+// Entries expire after 10 minutes
+const pendingOAuthStates = new Map();
+
+// Returns a per-user GoogleCalendarSync if the user has linked their account,
+// otherwise falls back to the shared server calendar.
+async function getCalendarForUser(userId) {
+  if (!googleCalendar) return null;
+  if (!userId) return googleCalendar;
+
+  try {
+    const profile = await db.getUserProfile(userId);
+    const userToken = profile?.googleToken;
+    if (!userToken) return googleCalendar;
+
+    const GoogleCalendarSync = require('./google-calendar');
+    const userCalendar = new GoogleCalendarSync({
+      credentials: googleCalendar.credentials,
+      tokenJson: userToken,
+      calendarId: 'primary'
+    });
+    await userCalendar.initialize();
+    return userCalendar;
+  } catch (err) {
+    console.warn('Could not load per-user calendar, falling back to shared:', err.message);
+    return googleCalendar;
+  }
+}
+
+// Generates a Google OAuth URL tied to a Telegram userId + chatId.
+// The state param lets the callback identify which user authorised.
+function generateGoogleAuthUrl(userId, chatId) {
+  if (!googleCalendar || !googleCalendar.auth) return null;
+
+  const state = crypto.randomBytes(16).toString('hex');
+  pendingOAuthStates.set(state, { userId, chatId });
+  setTimeout(() => pendingOAuthStates.delete(state), 10 * 60 * 1000); // 10-min TTL
+
+  return googleCalendar.auth.generateAuthUrl({
+    access_type: 'offline',
+    scope: ['https://www.googleapis.com/auth/calendar'],
+    prompt: 'consent',
+    state
+  });
+}
 
 async function initializeIntegrations() {
   // Google Calendar
@@ -532,61 +608,40 @@ async function initializeIntegrations() {
   }
 }
 
-async function addToCalendar(actionData) {
+async function syncTask(actionData, userId) {
   const promises = [];
 
-  // Add to Google Calendar
-  if (googleCalendar) {
-    try {
-      promises.push(
-        googleCalendar.addEvent(actionData)
-          .catch(err => console.error('Google Calendar add failed:', err.message))
-      );
-    } catch (error) {
-      console.error('Google Calendar error:', error.message);
-    }
+  // Use per-user calendar if the user has linked their Google account,
+  // otherwise fall back to the shared server calendar.
+  const calendar = await getCalendarForUser(userId);
+  if (calendar) {
+    promises.push(
+      calendar.addEvent(actionData)
+        .catch(err => console.error('Google Calendar sync failed:', err.message))
+    );
   }
 
-  // Add to Apple Calendar
   if (appleCalendar) {
-    try {
-      promises.push(
-        appleCalendar.addEvent(actionData)
-          .catch(err => console.error('Apple Calendar add failed:', err.message))
-      );
-    } catch (error) {
-      console.error('Apple Calendar error:', error.message);
-    }
+    promises.push(
+      appleCalendar.addEvent(actionData)
+        .catch(err => console.error('Apple Calendar sync failed:', err.message))
+    );
   }
 
-  // Add to Notion
   if (notionManager) {
-    try {
+    promises.push(
+      notionManager.addTask(actionData)
+        .catch(err => console.error('Notion task sync failed:', err.message))
+    );
+    if (userId) {
       promises.push(
-        notionManager.addTask(actionData)
-          .catch(err => console.error('Notion add failed:', err.message))
+        notionManager.addNote({ title: actionData.action, content: actionData.motivation, userId })
+          .catch(err => console.error('Notion note sync failed:', err.message))
       );
-    } catch (error) {
-      console.error('Notion error:', error.message);
     }
   }
 
-  // Wait for all to complete
   await Promise.all(promises);
-}
-
-async function addToNotes(actionData, userId) {
-  if (notionManager) {
-    try {
-      await notionManager.addNote({
-        title: actionData.action,
-        content: actionData.motivation,
-        userId: userId
-      });
-    } catch (error) {
-      console.error('Error adding note:', error.message);
-    }
-  }
 }
 
 // ============================================
@@ -610,7 +665,9 @@ app.listen(PORT, async () => {
       openrouterModel: process.env.OPENROUTER_MODEL,
       slackToken: SLACK_TOKEN,
       telegramToken: TELEGRAM_TOKEN,
-      calendarSync: googleCalendar
+      calendarSync: googleCalendar,
+      onTaskCreated: syncTask,
+      onGoogleConnect: generateGoogleAuthUrl
     });
     console.log('✅ Messaging integration initialized');
   } catch (err) {

@@ -143,7 +143,7 @@ NEXT_STEP: [what they could explore next]`;
   }
 
   async getStreakStatus(userId) {
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     const today = this._getTodayKey();
     const todayLog = profile.commitmentHistory?.[today];
 
@@ -530,6 +530,94 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
 
     const response = await this._callOpenRouter('Who am I as a creator?', systemPrompt);
     return response;
+  }
+
+  // ============================================
+  // INTENT CLASSIFICATION
+  // ============================================
+
+  async classifyIntent(message) {
+    const normalized = (message || '').trim();
+    // Fast-path: greetings and short confirmations skip the API
+    if (/^(hi|hello|hey|yo|hola|sup|good morning|good afternoon|good evening|ok|okay|yes|sure|ready|yep|yeah|nope|nah|fine|thanks?)$/i.test(normalized.replace(/[^\w\s]/g, '').trim())) {
+      return 'chat';
+    }
+
+    const systemPrompt = `Classify the user message into exactly one intent word from this list:
+task - adding a to-do, reminder, or chore ("buy milk", "remind me to call", "don't forget...")
+schedule - booking an event at a specific date/time ("meeting tomorrow 3pm", "dentist on Friday")
+idea - exploring or developing an idea ("I'm thinking about...", "what if I...", "I have an idea for...")
+commit - setting or logging a daily habit ("15 min writing", "I want to do 30min coding", "I completed 20min")
+energy - logging energy level ("energy 7", "feeling tired", "I'm drained today")
+review - requesting a weekly summary or progress ("how did I do", "weekly review", "show my progress")
+motivation - asking for encouragement ("I'm stuck", "motivate me", "I'm procrastinating")
+pattern - asking about work patterns ("how do I work", "show my patterns", "when am I most productive")
+abandoned - asking about forgotten goals ("what did I forget", "remind me abandoned goals")
+help - asking for available commands ("help", "what can you do", "commands")
+connect - linking or connecting a service account ("connect google", "link calendar", "sign in with google", "connect my calendar")
+chat - anything else (casual talk, questions, follow-ups)
+
+Reply with ONLY the single intent word. No punctuation, no explanation.`;
+
+    try {
+      const result = await this._callOpenRouter(message, systemPrompt);
+      const intent = (result || '').trim().toLowerCase().replace(/[^a-z]/g, '');
+      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','chat'];
+      return valid.includes(intent) ? intent : 'chat';
+    } catch {
+      return 'chat';
+    }
+  }
+
+  // ============================================
+  // TASK PARSING
+  // ============================================
+
+  async parseTask(message) {
+    const systemPrompt = `You are a personal assistant. Convert the user message into a structured task.
+
+Format EXACTLY as:
+ACTION: [what to do]
+DEADLINE: [when — use specific date if mentioned, else "today"]
+PRIORITY: [high/medium/low]
+MOTIVATION: [one short encouraging phrase]`;
+
+    const response = await this._callOpenRouter(message, systemPrompt);
+    const lines = (response || '').split(/\r?\n/);
+    const result = { action: '', deadline: 'today', priority: 'medium', motivation: 'You got this!' };
+
+    lines.forEach(line => {
+      const m = line.match(/^\s*(ACTION|DEADLINE|PRIORITY|MOTIVATION)\s*:\s*(.+)$/i);
+      if (m) result[m[1].toLowerCase()] = m[2].trim();
+    });
+
+    return result;
+  }
+
+  // ============================================
+  // PROFILE METADATA - Store chatId, platform, etc.
+  // ============================================
+
+  async updateProfileMeta(userId, meta) {
+    const profile = await this._getOrCreateProfile(userId);
+    Object.assign(profile, meta);
+    await this._saveProfile(userId, profile);
+  }
+
+  // ============================================
+  // UPCOMING REMINDERS - Tasks due soon
+  // ============================================
+
+  async getUpcomingReminders(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const now = Date.now();
+    const in24h = now + 24 * 60 * 60 * 1000;
+
+    return (profile.allTasks || []).filter(task => {
+      if (task.completed) return false;
+      if (!task.deadlineMs) return false;
+      return task.deadlineMs > now && task.deadlineMs <= in24h;
+    });
   }
 
   // ============================================

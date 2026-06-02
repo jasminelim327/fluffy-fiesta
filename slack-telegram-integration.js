@@ -12,6 +12,8 @@ class MessagingIntegration {
     this.slackToken = config.slackToken;
     this.telegramToken = config.telegramToken;
     this.calendarSync = config.calendarSync;
+    this.onTaskCreated = config.onTaskCreated || null;
+    this.onGoogleConnect = config.onGoogleConnect || null;
   }
 
   // ============================================
@@ -19,91 +21,100 @@ class MessagingIntegration {
   // ============================================
 
   async handleTelegramMessage(message, userId, chatId) {
-    let response;
-    const text = message.toLowerCase();
+    const intent = await this.assistant.classifyIntent(message);
+    console.log(`Intent classified as "${intent}" for message:`, message);
 
-    // Parse intent from casual message
-    if (text.includes('help') || text.includes('commands') || text.includes('what can i say') || text.includes('what can i do') || text.includes('show me commands')) {
-      return this._formatTelegramResponse(this._helpMessage(), chatId);
-    }
+    switch (intent) {
+      case 'help':
+        return this._formatTelegramResponse(this._helpMessage(), chatId);
 
-    if (text.includes('deepen') || text.includes('idea')) {
-      response = await this.assistant.deepenIdea(message, userId);
-      return this._formatTelegramResponse(response, chatId);
-    }
+      case 'task':
+      case 'schedule': {
+        const taskData = await this.assistant.parseTask(message);
+        if (this.onTaskCreated) {
+          await this.onTaskCreated(taskData, userId).catch(err =>
+            console.error('Task sync failed:', err.message)
+          );
+        }
+        const msg = taskData.action
+          ? `✅ Got it!\n<b>${taskData.action}</b>\n📅 ${taskData.deadline}\n🎯 ${(taskData.priority || 'medium').toUpperCase()}\n💪 ${taskData.motivation}`
+          : `I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".`;
+        return { chat_id: chatId, text: msg, parse_mode: 'HTML' };
+      }
 
-    if (text.includes('schedule') || text.includes('calendar') || text.includes('meeting') || text.includes('appointment')) {
-      response = await this.assistant.scheduleEvent(message, userId);
-      return this._formatTelegramResponse(response, chatId);
-    }
+      case 'idea':
+        return this._formatTelegramResponse(await this.assistant.deepenIdea(message, userId), chatId);
 
-    if (text.includes('commit') || text.includes('goal')) {
-      // Extract: "15 min writing" or "30min coding"
-      const match = message.match(/(\d+)\s*(min|minute)/i);
-      if (match) {
-        const minutes = parseInt(match[1]);
-        const desc = message.replace(/\d+\s*min(ute)?/i, '').trim();
-        response = await this.assistant.setDailyCommitment(userId, {
-          minutes,
-          description: desc || 'daily practice'
-        });
-
-        if (this.calendarSync && response.commitment) {
-          try {
-            await this.calendarSync.addRecurringEvent({
+      case 'commit': {
+        const minMatch = message.match(/(\d+)\s*min/i);
+        if (minMatch) {
+          const minutes = parseInt(minMatch[1]);
+          const desc = message.replace(/\d+\s*min(ute)?s?/i, '').trim() || 'daily practice';
+          const response = await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
+          if (this.calendarSync && response.commitment) {
+            this.calendarSync.addRecurringEvent({
               action: `Daily habit: ${response.commitment.description}`,
               deadline: 'tomorrow',
               priority: 'medium',
               motivation: `Daily habit reminder for ${response.commitment.description}`
-            }, 30, response.commitment.minutes || 30);
-          } catch (err) {
-            console.error('Calendar habit event failed:', err.message || err);
+            }, 30, response.commitment.minutes || 30).catch(err =>
+              console.error('Calendar habit event failed:', err.message)
+            );
+          }
+          return this._formatTelegramResponse(response, chatId);
+        }
+        const numMatch = message.match(/(\d+)/);
+        if (numMatch) {
+          return this._formatTelegramResponse(
+            await this.assistant.logDailyCommitment(userId, parseInt(numMatch[1])), chatId
+          );
+        }
+        return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+      }
+
+      case 'energy': {
+        const numMatch = message.match(/(\d+)/);
+        if (numMatch) {
+          return this._formatTelegramResponse(
+            await this.assistant.logEnergy(userId, parseInt(numMatch[1]), 'user logged'), chatId
+          );
+        }
+        return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+      }
+
+      case 'review':
+        return this._formatTelegramResponse(await this.assistant.generateWeeklyReview(userId), chatId);
+
+      case 'motivation':
+        return this._formatTelegramResponse(await this.assistant.getMotivatation(userId, 'default'), chatId);
+
+      case 'pattern':
+        return this._formatTelegramResponse(await this.assistant.analyzePatterns(userId), chatId);
+
+      case 'abandoned':
+        return this._formatTelegramResponse(await this.assistant.checkAbandonedGoals(userId), chatId);
+
+      case 'connect': {
+        if (this.onGoogleConnect) {
+          const url = await this.onGoogleConnect(userId, chatId);
+          if (url) {
+            return {
+              chat_id: chatId,
+              text: `🔗 <b>Connect your Google Calendar</b>\n\nTap the link below to sign in with Google. Once authorised, all your tasks will be added to your personal calendar automatically.\n\n<a href="${url}">Sign in with Google →</a>`,
+              parse_mode: 'HTML'
+            };
           }
         }
-
-        return this._formatTelegramResponse(response, chatId);
+        return { chat_id: chatId, text: 'Google Calendar connection is not configured on this server.', parse_mode: 'HTML' };
       }
-    }
 
-    if (text.includes('energy') || text.includes('how are you feeling')) {
-      // "energy 7 morning" or "feeling great"
-      const match = message.match(/(\d+)/);
-      if (match) {
-        response = await this.assistant.logEnergy(userId, parseInt(match[1]), 'user logged');
-        return this._formatTelegramResponse(response, chatId);
-      }
+      default:
+        return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
     }
+  }
 
-    if (text.includes('review') || text.includes('week')) {
-      response = await this.assistant.generateWeeklyReview(userId);
-      return this._formatTelegramResponse(response, chatId);
-    }
-
-    if (text.includes('motivate') || text.includes('stuck') || text.includes('procrastinating')) {
-      response = await this.assistant.getMotivatation(userId, 'default');
-      return this._formatTelegramResponse(response, chatId);
-    }
-
-    if (text.includes('pattern') || text.includes('how do i work')) {
-      response = await this.assistant.analyzePatterns(userId);
-      return this._formatTelegramResponse(response, chatId);
-    }
-
-    if (text.includes('forgot') || text.includes('abandoned')) {
-      response = await this.assistant.checkAbandonedGoals(userId);
-      return this._formatTelegramResponse(response, chatId);
-    }
-
-    if (text.includes('schedule') || text.includes('calendar') || text.includes('appointment') || text.includes('meeting') || text.includes('remind')) {
-      response = await this.assistant.scheduleEvent(message, userId);
-      console.log('MessagingIntegration assistant schedule response:', response);
-      return this._formatTelegramResponse(response, chatId);
-    }
-
-    // Default: answer directly instead of just deepening the idea
-    response = await this.assistant.answerDirectly(message, userId);
-    console.log('MessagingIntegration assistant response:', response);
-    return this._formatTelegramResponse(response, chatId);
+  async classifyIntent(message) {
+    return this.assistant.classifyIntent(message);
   }
 
   // ============================================
