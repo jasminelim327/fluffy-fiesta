@@ -185,7 +185,7 @@ ${profileSummary}`;
     Looks at tasks they started but abandoned
     Reminds them with encouragement to pick back up
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     if (!profile.allTasks) return [];
 
     const now = Date.now();
@@ -241,7 +241,7 @@ SMALL_RESTART: [one tiny action to get momentum back]`;
     - Patterns (procrastination, energy, focus times)
     - Encouragement for next week
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     const weekStats = this._calculateWeekStats(profile);
 
     const systemPrompt = `You are a thoughtful friend doing a weekly check-in.
@@ -306,7 +306,7 @@ PERSONAL_NOTE: [warm closing about their potential]`;
   }
 
   async getOptimalWorkSchedule(userId) {
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     if (!profile.energyLog || profile.energyLog.length < 14) {
       return { error: 'Need 2+ weeks of energy data' };
     }
@@ -407,7 +407,7 @@ MOTIVATION: [why this matters beyond money/status]`;
     Which goals are they avoiding?
     Are they spreading too thin?
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
 
     const analysis = {
       procrastinationPatterns: this._findProcrastinationPatterns(profile),
@@ -441,7 +441,7 @@ EXPERIMENT: [one small behavior change to test]`;
   // ============================================
 
   async getMotivatation(userId, flavor = 'default') {
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     
     let systemPrompt;
 
@@ -532,7 +532,7 @@ Show you care about their growth. Be warm and real. One paragraph.`;
     - Are they motivated by external validation or internal growth?
     - How does their identity relate to their goals?
     */
-    const profile = this._getOrCreateProfile(userId);
+    const profile = await this._getOrCreateProfile(userId);
     
     const systemPrompt = `You are a therapist + coach + best friend.
 Based on their behavior patterns, tell them something true about how they work best.
@@ -660,6 +660,36 @@ RECURRING: [yes/no]`;
     Object.assign(profile, meta);
     this.userProfiles.set(userId, profile); // keep cache in sync
     await db.saveUserProfile(userId, profile);
+  }
+
+  // ============================================
+  // DAILY MORNING MESSAGE
+  // ============================================
+
+  async buildDailyMessage(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const lines = ['☀️ *Good morning!* Here\'s your daily summary:\n'];
+
+    const streak = profile.currentStreak || 0;
+    const commitment = profile.dailyCommitment;
+    if (commitment) {
+      lines.push(`🔥 *Streak:* ${streak} day(s)`);
+      lines.push(`🎯 *Today\'s goal:* ${commitment.minutes}min of ${commitment.description}`);
+    }
+
+    const todayTasks = (profile.allTasks || []).filter(t => !t.completed && t.deadline === 'today');
+    if (todayTasks.length > 0) {
+      lines.push(`\n📌 *Due today:*`);
+      todayTasks.slice(0, 5).forEach(t => lines.push(`• ${t.action}`));
+    }
+
+    const systemPrompt = `You are a warm, encouraging personal assistant sending a short morning message.
+Write ONE sentence of motivation relevant to someone working on: ${commitment?.description || 'their goals'}.
+Keep it under 20 words. No emojis. Just the sentence.`;
+    const motivationLine = await this._callOpenRouter('morning motivation', systemPrompt);
+    lines.push(`\n💬 _${motivationLine.trim()}_`);
+
+    return lines.join('\n');
   }
 
   // ============================================

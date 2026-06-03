@@ -107,10 +107,24 @@ async function getGoogleToken(userId) {
   }
 }
 
+async function getAllUsersWithTelegram() {
+  if (!pool) return [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT user_id, profile FROM user_profiles WHERE profile->>'telegramChatId' IS NOT NULL`
+    );
+    return rows.map(r => ({ userId: r.user_id, ...r.profile }));
+  } catch (err) {
+    console.error('[DB] getAllUsersWithTelegram error:', err.message);
+    return [];
+  }
+}
+
 module.exports = {
   initializeDatabase,
   getUserProfile,
   saveUserProfile,
   saveGoogleToken,
-  getGoogleToken
+  getGoogleToken,
+  getAllUsersWithTelegram
 };

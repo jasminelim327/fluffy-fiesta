@@ -8,6 +8,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fs = require('fs');
 const bodyParser = require('body-parser');
+const cron = require('node-cron');
 const db = require('./db');
 const MessagingIntegration = require('./slack-telegram-integration');
 
@@ -698,6 +699,28 @@ app.listen(PORT, async () => {
     console.warn('Could not initialize MessagingIntegration:', err.message || err);
   }
   
+  // Daily morning message — 8am Singapore time
+  const dailyMsgTime = process.env.DAILY_MESSAGE_TIME || '0 8 * * *';
+  const dailyMsgTimezone = process.env.DAILY_MESSAGE_TIMEZONE || 'Asia/Singapore';
+  cron.schedule(dailyMsgTime, async () => {
+    if (!messagingIntegration || !TELEGRAM_TOKEN) return;
+    console.log('📅 Sending daily morning messages...');
+    const users = await db.getAllUsersWithTelegram().catch(() => []);
+    for (const user of users) {
+      try {
+        const text = await messagingIntegration.assistant.buildDailyMessage(user.userId);
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+          chat_id: user.telegramChatId,
+          text,
+          parse_mode: 'Markdown'
+        });
+      } catch (err) {
+        console.error(`Daily message failed for user ${user.userId}:`, err.message);
+      }
+    }
+  }, { timezone: dailyMsgTimezone });
+  console.log(`⏰ Daily message scheduled at ${dailyMsgTime} (${dailyMsgTimezone})`);
+
   // Start Telegram polling if webhook not used
   if (!process.env.USE_TELEGRAM_WEBHOOK) {
     console.log('📱 Starting Telegram polling...');

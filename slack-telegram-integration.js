@@ -38,10 +38,6 @@ class MessagingIntegration {
         if (!taskData.action) {
           return { chat_id: chatId, text: 'I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".', parse_mode: 'Markdown' };
         }
-        const priorityDot = { high: '🔴', medium: '🟡', low: '🟢' }[taskData.priority] || '🟡';
-        const priorityLabel = taskData.priority
-          ? taskData.priority.charAt(0).toUpperCase() + taskData.priority.slice(1)
-          : 'Medium';
         const recurringLine = taskData.recurring ? '🔁 Recurring daily (30 days)' : null;
         const msg = [
           '✅ *Task saved!*',
@@ -49,9 +45,9 @@ class MessagingIntegration {
           `📌 *${taskData.action}*`,
           `📅 ${taskData.deadline}`,
           recurringLine,
-          `${priorityDot} ${priorityLabel} priority`,
+          '',
           `💬 _${taskData.motivation}_`
-        ].filter(Boolean).join('\n');
+        ].filter(line => line !== null).join('\n');
         return { chat_id: chatId, text: msg, parse_mode: 'Markdown' };
       }
 
