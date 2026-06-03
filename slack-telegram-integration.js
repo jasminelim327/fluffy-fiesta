@@ -1,4 +1,4 @@
-// slack-telegram-integration.js - Example: Wire friend features to messaging
+// telegram-integration.js - Telegram messaging integration
 
 const FriendlyAssistant = require('./assistant-features');
 const axios = require('axios');
@@ -9,7 +9,6 @@ class MessagingIntegration {
       openrouterKey: config.openrouterKey,
       openrouterModel: config.openrouterModel
     });
-    this.slackToken = config.slackToken;
     this.telegramToken = config.telegramToken;
     this.calendarSync = config.calendarSync;
     this.onTaskCreated = config.onTaskCreated || null;
@@ -140,206 +139,6 @@ class MessagingIntegration {
   // RESPONSE FORMATTING
   // ============================================
 
-  _formatSlackResponse(response) {
-    if (typeof response === 'string') {
-      return {
-        text: response,
-        mrkdwn: true
-      };
-    }
-
-    if (response.enthusiasm) {
-      // Idea deepening response
-      return {
-        blocks: [
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: `*${response.enthusiasm}*` }
-          },
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: `*Questions to dive deeper:*\n${response.deeper}` }
-          },
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: `💡 *What you might be missing:*\n${response.opportunity}` }
-          },
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: `🚀 *Next step:*\n${response.nextStep}` }
-          }
-        ]
-      };
-    }
-
-    if (response.streak !== undefined) {
-      // Streak response
-      return {
-        blocks: [
-          {
-            type: 'section',
-            text: { type: 'mrkdwn', text: response.message }
-          },
-          {
-            type: 'section',
-            fields: [
-              {
-                type: 'mrkdwn',
-                text: `*Daily Target:*\n${response.todayTarget || 0}min`
-              },
-              {
-                type: 'mrkdwn',
-                text: `*Progress:*\n${Math.round((response.progress || 0) * 100)}%`
-              }
-            ]
-          }
-        ]
-      };
-    }
-
-    return {
-      text: JSON.stringify(response, null, 2),
-      mrkdwn: true
-    };
-  }
-
-  _formatStreakResponse(response) {
-    const streakEmoji = response.currentStreak === 0 ? '⏰' : response.currentStreak < 7 ? '🔥' : '🚀';
-    
-    return {
-      blocks: [
-        {
-          type: 'header',
-          text: {
-            type: 'plain_text',
-            text: `${streakEmoji} ${response.currentStreak}-Day Streak`
-          }
-        },
-        {
-          type: 'section',
-          fields: [
-            {
-              type: 'mrkdwn',
-              text: `*Daily Commitment:*\n${response.dailyCommitment?.minutes || 0}min ${response.dailyCommitment?.description || ''}`
-            },
-            {
-              type: 'mrkdwn',
-              text: `*Today's Progress:*\n${response.todayProgress}/${response.todayTarget}min`
-            }
-          ]
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: response.message
-          }
-        }
-      ]
-    };
-  }
-
-  _formatGoalResponse(response) {
-    return {
-      blocks: [
-        {
-          type: 'header',
-          text: { type: 'plain_text', text: response.goal.title }
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: response.coachResponse }
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: '_Goal ID: ' + response.goalId + '_' }
-        }
-      ]
-    };
-  }
-
-  _formatReviewResponse(response) {
-    return {
-      blocks: [
-        {
-          type: 'header',
-          text: { type: 'plain_text', text: '📊 Weekly Review' }
-        },
-        {
-          type: 'section',
-          fields: [
-            { type: 'mrkdwn', text: `*Completed:*\n${response.stats.completed} tasks` },
-            { type: 'mrkdwn', text: `*Streak:*\n${response.stats.streaks} days` },
-            { type: 'mrkdwn', text: `*Most Active:*\n${response.stats.mostActiveDay}` },
-            { type: 'mrkdwn', text: `*Energy:*\n${response.stats.energyPattern}` }
-          ]
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: response.review }
-        }
-      ]
-    };
-  }
-
-  _formatPatternResponse(response) {
-    return {
-      blocks: [
-        {
-          type: 'header',
-          text: { type: 'plain_text', text: '🔍 Your Patterns' }
-        },
-        {
-          type: 'section',
-          text: { type: 'mrkdwn', text: response.advice }
-        },
-        {
-          type: 'divider'
-        },
-        {
-          type: 'section',
-          text: { 
-            type: 'mrkdwn', 
-            text: `*Data:*\n` +
-              `Procrastination: ${response.analysis.procrastinationPatterns.join(', ') || 'none'}\n` +
-              `At Risk Goals: ${response.analysis.abandonmentRisk} tasks\n` +
-              `Active Goals: ${response.analysis.overcommitment.count} (${response.analysis.overcommitment.warning})`
-          }
-        }
-      ]
-    };
-  }
-
-  _formatAbandonedResponse(reminders) {
-    if (reminders.length === 0) {
-      return {
-        text: '✨ No abandoned goals! You\'re staying consistent!'
-      };
-    }
-
-    const blocks = [
-      {
-        type: 'header',
-        text: { type: 'plain_text', text: '⏰ Gentle Reminders' }
-      }
-    ];
-
-    reminders.forEach((reminder, i) => {
-      blocks.push({
-        type: 'section',
-        text: { 
-          type: 'mrkdwn', 
-          text: `*${reminder.task}*\n${reminder.reminder}` 
-        }
-      });
-      if (i < reminders.length - 1) {
-        blocks.push({ type: 'divider' });
-      }
-    });
-
-    return { blocks };
-  }
-
   // Convert common markdown that Telegram doesn't support into Telegram-compatible format
   _toTelegramMarkdown(text) {
     return text
@@ -381,25 +180,6 @@ class MessagingIntegration {
       text: this._toTelegramMarkdown(text),
       parse_mode: 'Markdown'
     };
-  }
-
-  // ============================================
-  // SEND TO SLACK
-  // ============================================
-
-  async sendToSlack(channel, blocks) {
-    try {
-      await axios.post('https://slack.com/api/chat.postMessage', {
-        channel: channel,
-        ...blocks
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.slackToken}`
-        }
-      });
-    } catch (error) {
-      console.error('Slack send error:', error.message);
-    }
   }
 
   // ============================================
@@ -450,43 +230,3 @@ class MessagingIntegration {
 
 module.exports = MessagingIntegration;
 
-// ============================================
-// USAGE EXAMPLES IN BACKEND
-// ============================================
-
-/*
-const MessagingIntegration = require('./slack-telegram-integration');
-
-const integration = new MessagingIntegration({
-  openrouterKey: process.env.OPENROUTER_API_KEY,
-  slackToken: process.env.SLACK_BOT_TOKEN,
-  telegramToken: process.env.TELEGRAM_BOT_TOKEN
-});
-
-// In your Slack handler:
-app.post('/slack/command', async (req, res) => {
-  const { command, text, user_id, channel_id } = req.body;
-  
-  res.send(''); // Acknowledge immediately
-  
-  const response = await integration.handleSlackCommand(command, text, user_id);
-  await integration.sendToSlack(channel_id, response);
-});
-
-// In your Telegram handler:
-app.post('/telegram/webhook', async (req, res) => {
-  const update = req.body;
-  const message = update.message;
-  
-  if (message?.text) {
-    const response = await integration.handleTelegramMessage(
-      message.text,
-      message.from.id,
-      message.chat.id
-    );
-    await integration.sendToTelegram(message.chat.id, response.text);
-  }
-  
-  res.send('OK');
-});
-*/

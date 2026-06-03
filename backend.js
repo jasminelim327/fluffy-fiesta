@@ -12,9 +12,8 @@ const db = require('./db');
 const MessagingIntegration = require('./slack-telegram-integration');
 
 const app = express();
-// Capture raw body for Slack signature verification (works for JSON and urlencoded)
-app.use(bodyParser.json({ verify: (req, res, buf) => { req.rawBody = buf; } }));
-app.use(bodyParser.urlencoded({ extended: true, verify: (req, res, buf) => { req.rawBody = buf; } }));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // ============================================
 // CONFIG
@@ -22,56 +21,13 @@ app.use(bodyParser.urlencoded({ extended: true, verify: (req, res, buf) => { req
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'gpt-4o-mini';
-const SLACK_TOKEN = process.env.SLACK_BOT_TOKEN;
-const SLACK_SECRET = process.env.SLACK_SIGNING_SECRET;
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // Startup checks: warn when critical env vars are missing
 if (!OPENROUTER_KEY) console.warn('⚠️ OPENROUTER_API_KEY not set. OpenRouter requests will fail.');
-if (!SLACK_TOKEN || !SLACK_SECRET) console.warn('⚠️ SLACK_BOT_TOKEN or SLACK_SIGNING_SECRET missing — Slack endpoints may fail.');
 if (!TELEGRAM_TOKEN) console.warn('⚠️ TELEGRAM_BOT_TOKEN not set — Telegram integration disabled.');
-
-// ============================================
-// SLACK VERIFICATION
-// ============================================
-
-function verifySlackSignature(req) {
-  const signature = req.headers['x-slack-signature'];
-  const timestamp = req.headers['x-slack-request-timestamp'];
-
-  // Basic checks
-  if (!signature || !timestamp || !SLACK_SECRET) return false;
-
-  // Verify timestamp is recent (within 5 minutes)
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - parseInt(timestamp)) > 300) return false;
-
-  // Prefer raw body captured by body-parser's verify hook
-  let raw = '';
-  if (req.rawBody && Buffer.isBuffer(req.rawBody)) {
-    raw = req.rawBody.toString('utf8');
-  } else if (typeof req.body === 'string') {
-    raw = req.body;
-  } else {
-    // Fallback - not ideal for Slack signature verification
-    raw = JSON.stringify(req.body || '');
-  }
-
-  const baseString = `v0:${timestamp}:${raw}`;
-  const mySignature = 'v0=' + crypto.createHmac('sha256', SLACK_SECRET).update(baseString).digest('hex');
-
-  const sigBuf = Buffer.from(signature);
-  const mySigBuf = Buffer.from(mySignature);
-  if (sigBuf.length !== mySigBuf.length) return false;
-
-  try {
-    return crypto.timingSafeEqual(sigBuf, mySigBuf);
-  } catch (e) {
-    return false;
-  }
-}
 
 // ============================================
 // OPENROUTER INTEGRATION
@@ -197,48 +153,6 @@ function parseResponse(text) {
   return result;
 }
 
-// ============================================
-// SLACK HANDLERS
-// ============================================
-
-if (SLACK_TOKEN && SLACK_SECRET) {
-  app.post('/slack/command', (req, res) => {
-    if (!verifySlackSignature(req)) {
-      return res.status(401).send('Unauthorized');
-    }
-
-    res.send(''); // Acknowledge immediately
-
-    const { command, text, user_id, team_id } = req.body;
-
-    if (command === '/task') {
-      processAndReplySlack(text, user_id);
-    }
-  });
-
-  app.post('/slack/events', (req, res) => {
-    if (!verifySlackSignature(req)) {
-      return res.status(401).send('Unauthorized');
-    }
-
-    const { type, challenge, event } = req.body;
-
-    // Slack challenge for verification
-    if (type === 'url_verification') {
-      return res.send(challenge);
-    }
-
-    res.send(''); // Acknowledge immediately
-
-    if (event.type === 'message' && !event.bot_id) {
-      // Don't process bot's own messages
-      const { text, user, channel } = event;
-      processAndReplySlack(text, user, channel);
-    }
-  });
-} else {
-  console.log('⚠️ Slack integration disabled: set SLACK_BOT_TOKEN and SLACK_SIGNING_SECRET to enable it.');
-}
 
 app.get('/google/oauth', async (req, res) => {
   if (!googleCalendar) {
@@ -353,36 +267,6 @@ app.get('/google/oauth/callback', async (req, res) => {
     res.status(500).send('Google OAuth callback failed. Check the server logs.');
   }
 });
-
-async function processAndReplySlack(userText, userId, channelId = '@' + userId) {
-  try {
-    const actionData = await processMessage(userText);
-    
-    const message = `
-✅ Got it!
-**${actionData.action}**
-📅 ${actionData.deadline}
-🎯 ${String(actionData.priority || 'medium').toUpperCase()}
-💪 ${actionData.motivation}
-    `;
-
-    await axios.post('https://slack.com/api/chat.postMessage', {
-      channel: channelId,
-      text: message,
-      mrkdwn: true
-    }, {
-      headers: {
-        'Authorization': `Bearer ${SLACK_TOKEN}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    syncTask(actionData, userId);
-
-  } catch (error) {
-    console.error('Slack processing error:', error.message);
-  }
-}
 
 // ============================================
 // TELEGRAM HANDLERS
@@ -585,7 +469,6 @@ async function sendTelegramTyping(chatId) {
 // Initialize integrations (optional - only if configured)
 let googleCalendar = null;
 let appleCalendar = null;
-let notionManager = null;
 let messagingIntegration = null;
 
 // Tracks in-flight OAuth sessions: state token → { userId, chatId }
@@ -735,20 +618,6 @@ async function initializeIntegrations() {
     }
   }
 
-  // Notion
-  if (process.env.NOTION_API_KEY && process.env.NOTION_DATABASE_ID) {
-    try {
-      const NotionTaskManager = require('./notion');
-      notionManager = new NotionTaskManager({
-        apiKey: process.env.NOTION_API_KEY,
-        databaseId: process.env.NOTION_DATABASE_ID,
-        notesPageId: process.env.NOTION_NOTES_PAGE_ID
-      });
-      console.log('✅ Notion initialized');
-    } catch (error) {
-      console.warn('⚠️ Notion not configured:', error.message);
-    }
-  }
 }
 
 async function syncTask(actionData, userId) {
@@ -793,19 +662,6 @@ async function syncTask(actionData, userId) {
       appleCalendar.addEvent(actionData)
         .catch(err => console.error('Apple Calendar sync failed:', err.message))
     );
-  }
-
-  if (notionManager) {
-    promises.push(
-      notionManager.addTask(actionData)
-        .catch(err => console.error('Notion task sync failed:', err.message))
-    );
-    if (userId) {
-      promises.push(
-        notionManager.addNote({ title: actionData.action, content: actionData.motivation, userId })
-          .catch(err => console.error('Notion note sync failed:', err.message))
-      );
-    }
   }
 
   await Promise.all(promises);
