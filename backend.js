@@ -679,7 +679,9 @@ app.listen(PORT, async () => {
   await initializeIntegrations();
 
   // Initialize persistence layer
-  await db.initializeDatabase();
+  await db.initializeDatabase().catch(err =>
+    console.warn('⚠️ Database initialization failed (continuing without DB):', err.message)
+  );
 
   // Instantiate the messaging integration that wires assistant features to Slack/Telegram
   try {
