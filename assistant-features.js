@@ -547,8 +547,13 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
       return 'chat';
     }
 
+    // Fast-path: anything with "reminder", "remind me", or "recurring" is always a task
+    if (/\b(remind(er)?|recurring|every day|daily reminder|repeat)\b/i.test(normalized)) {
+      return 'task';
+    }
+
     const systemPrompt = `Classify the user message into exactly one intent word from this list:
-task - adding a to-do, reminder, or chore ("buy milk", "remind me to call", "don't forget...")
+task - adding a to-do, reminder, or chore ("buy milk", "remind me to call", "don't forget...", "set reminder", "recurring reminder")
 schedule - booking an event at a specific date/time ("meeting tomorrow 3pm", "dentist on Friday")
 idea - exploring or developing an idea ("I'm thinking about...", "what if I...", "I have an idea for...")
 commit - setting or logging a daily habit ("15 min writing", "I want to do 30min coding", "I completed 20min")
@@ -609,6 +614,11 @@ RECURRING: [yes/no]`;
         result[key] = val;
       }
     });
+
+    // Regex override — never miss "recurring" even if the AI doesn't flag it
+    if (/\b(recurring|every day|daily reminder|repeat daily)\b/i.test(message)) {
+      result.recurring = true;
+    }
 
     return result;
   }
