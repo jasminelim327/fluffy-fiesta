@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Fluffy Fiesta</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: #FFFAF5; color: #5C3D2E; }
+    a { color: #FF6B35; }
+
+    nav {
+      background: #FFF8F0;
+      border-bottom: 1px solid #FFD9BF;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; color: #D4501A; text-decoration: none; }
+    .nav-links { display: flex; gap: 24px; font-size: 0.82rem; }
+    .nav-links a { color: #A0664A; text-decoration: none; }
+
+    .content { max-width: 680px; margin: 0 auto; padding: 52px 32px 80px; }
+    h1 { font-size: 2rem; font-weight: 900; color: #D4501A; margin-bottom: 8px; }
+    .meta { font-size: 0.78rem; color: #A0664A; margin-bottom: 40px; }
+    h2 { font-size: 1rem; font-weight: 700; color: #D4501A; margin: 32px 0 10px; }
+    p { font-size: 0.88rem; line-height: 1.8; margin-bottom: 10px; }
+    ul { padding-left: 20px; margin-bottom: 10px; }
+    li { font-size: 0.88rem; line-height: 1.8; }
+
+    footer {
+      background: #3D1A00;
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    footer span { color: #A0664A; font-size: 0.75rem; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { color: #A0664A; font-size: 0.75rem; text-decoration: none; }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <a class="nav-brand" href="index.html">
+      <svg width="28" height="28" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="36" cy="38" rx="22" ry="24" fill="#FF8C55"/>
+        <ellipse cx="36" cy="36" rx="20" ry="22" fill="#FFA06A"/>
+        <ellipse cx="29" cy="33" rx="3.5" ry="4" fill="white"/>
+        <ellipse cx="43" cy="33" rx="3.5" ry="4" fill="white"/>
+        <circle cx="30" cy="34" r="2" fill="#333"/>
+        <circle cx="44" cy="34" r="2" fill="#333"/>
+        <path d="M28 41 Q36 48 44 41" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <rect x="10" y="14" width="5" height="5" rx="1" fill="#FFD166" transform="rotate(20 12 16)"/>
+        <rect x="54" y="10" width="5" height="5" rx="1" fill="#4ECDC4" transform="rotate(-15 56 12)"/>
+        <circle cx="16" cy="52" r="3" fill="#FF6B6B"/>
+        <circle cx="58" cy="48" r="3" fill="#FFD166"/>
+      </svg>
+      Fluffy Fiesta
+    </a>
+    <div class="nav-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+    </div>
+  </nav>
+
+  <div class="content">
+    <h1>Privacy Policy</h1>
+    <p class="meta">Last updated: June 2026</p>
+
+    <h2>1. What we collect</h2>
+    <ul>
+      <li>Your Telegram user ID and chat ID</li>
+      <li>Tasks, reminders, and habit goals you create</li>
+      <li>Energy levels and streak data you log</li>
+      <li>Your timezone (only if you choose to share your location)</li>
+      <li>Google Calendar OAuth tokens (only if you connect Google Calendar)</li>
+    </ul>
+
+    <h2>2. How we use it</h2>
+    <p>Your data is used solely to provide the bot's features — saving tasks, sending reminders, and syncing events to Google Calendar. We do not sell, share, or use your data for advertising or any purpose beyond operating the service.</p>
+
+    <h2>3. Google Calendar</h2>
+    <p>If you connect Google Calendar, Fluffy Fiesta requests write-only access to add calendar events on your behalf. We store your OAuth token securely in our database to maintain the connection between sessions. We do not read, analyse, or share your existing calendar data.</p>
+    <p>You can revoke access at any time by visiting <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a> and removing Fluffy Fiesta, or by contacting us at the email below.</p>
+
+    <h2>4. Data storage</h2>
+    <p>Your data is stored in a secure PostgreSQL database hosted on Render. Your messages are processed by OpenRouter (an AI API provider) solely to generate responses — they are not stored or used to train models beyond what OpenRouter's own policies describe.</p>
+
+    <h2>5. Data deletion</h2>
+    <p>To delete all your data, send the message <strong>"delete my data"</strong> to the bot, or email us at the address below. We will remove your data within 7 days.</p>
+
+    <h2>6. Contact</h2>
+    <p>For any privacy questions, contact us at: <a href="mailto:jasminelim327@gmail.com">jasminelim327@gmail.com</a></p>
+  </div>
+
+  <footer>
+    <span>© 2026 Fluffy Fiesta</span>
+    <div class="footer-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+    </div>
+  </footer>
+
+</body>
+</html>

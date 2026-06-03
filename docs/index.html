@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fluffy Fiesta — Your personal productivity companion</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: #FFFAF5; color: #5C3D2E; }
+    a { color: #FF6B35; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav {
+      background: #FFF8F0;
+      border-bottom: 1px solid #FFD9BF;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; color: #D4501A; }
+    .nav-links { display: flex; gap: 24px; font-size: 0.82rem; color: #A0664A; }
+    .nav-links a { color: #A0664A; }
+
+    .hero {
+      background: linear-gradient(160deg, #FFF8F0, #FFF0E0);
+      padding: 64px 32px 48px;
+      text-align: center;
+    }
+    .hero svg { margin-bottom: 20px; }
+    .hero h1 { font-size: 2.1rem; font-weight: 900; color: #D4501A; line-height: 1.2; margin-bottom: 14px; }
+    .hero p { font-size: 0.95rem; color: #8B5E3C; max-width: 420px; margin: 0 auto 28px; line-height: 1.7; }
+    .cta {
+      display: inline-block;
+      background: #FF6B35;
+      color: white;
+      border-radius: 10px;
+      padding: 13px 32px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .cta:hover { background: #e85e2a; text-decoration: none; }
+
+    .features { padding: 48px 32px; background: white; }
+    .features-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #A0664A;
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .feature-card { background: #FFF8F0; border-radius: 14px; padding: 20px; }
+    .feature-card .icon { font-size: 1.5rem; margin-bottom: 8px; }
+    .feature-card h3 { font-size: 0.88rem; font-weight: 700; color: #D4501A; margin-bottom: 6px; }
+    .feature-card p { font-size: 0.78rem; color: #8B5E3C; line-height: 1.6; }
+
+    .gcal-note {
+      background: #FFF8F0;
+      border-top: 1px solid #FFD9BF;
+      padding: 28px 32px;
+      text-align: center;
+    }
+    .gcal-note p { font-size: 0.82rem; color: #8B5E3C; max-width: 520px; margin: 0 auto; line-height: 1.7; }
+
+    footer {
+      background: #3D1A00;
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    footer span { color: #A0664A; font-size: 0.75rem; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { color: #A0664A; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="nav-brand">
+      <svg width="32" height="32" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="36" cy="38" rx="22" ry="24" fill="#FF8C55"/>
+        <ellipse cx="36" cy="36" rx="20" ry="22" fill="#FFA06A"/>
+        <ellipse cx="29" cy="33" rx="3.5" ry="4" fill="white"/>
+        <ellipse cx="43" cy="33" rx="3.5" ry="4" fill="white"/>
+        <circle cx="30" cy="34" r="2" fill="#333"/>
+        <circle cx="44" cy="34" r="2" fill="#333"/>
+        <path d="M28 41 Q36 48 44 41" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <rect x="10" y="14" width="5" height="5" rx="1" fill="#FFD166" transform="rotate(20 12 16)"/>
+        <rect x="54" y="10" width="5" height="5" rx="1" fill="#4ECDC4" transform="rotate(-15 56 12)"/>
+        <circle cx="16" cy="52" r="3" fill="#FF6B6B"/>
+        <circle cx="58" cy="48" r="3" fill="#FFD166"/>
+        <rect x="52" y="26" width="4" height="4" rx="1" fill="#FF6B6B" transform="rotate(30 54 28)"/>
+        <rect x="13" y="30" width="4" height="4" rx="1" fill="#4ECDC4" transform="rotate(-20 15 32)"/>
+      </svg>
+      Fluffy Fiesta
+    </div>
+    <div class="nav-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <svg width="96" height="96" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="36" cy="38" rx="22" ry="24" fill="#FF8C55"/>
+      <ellipse cx="36" cy="36" rx="20" ry="22" fill="#FFA06A"/>
+      <ellipse cx="29" cy="33" rx="3.5" ry="4" fill="white"/>
+      <ellipse cx="43" cy="33" rx="3.5" ry="4" fill="white"/>
+      <circle cx="30" cy="34" r="2" fill="#333"/>
+      <circle cx="44" cy="34" r="2" fill="#333"/>
+      <path d="M28 41 Q36 48 44 41" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+      <rect x="10" y="14" width="5" height="5" rx="1" fill="#FFD166" transform="rotate(20 12 16)"/>
+      <rect x="54" y="10" width="5" height="5" rx="1" fill="#4ECDC4" transform="rotate(-15 56 12)"/>
+      <circle cx="16" cy="52" r="3" fill="#FF6B6B"/>
+      <circle cx="58" cy="48" r="3" fill="#FFD166"/>
+      <rect x="52" y="26" width="4" height="4" rx="1" fill="#FF6B6B" transform="rotate(30 54 28)"/>
+      <rect x="13" y="30" width="4" height="4" rx="1" fill="#4ECDC4" transform="rotate(-20 15 32)"/>
+    </svg>
+    <h1>Your personal productivity<br>companion on Telegram</h1>
+    <p>Set tasks, track habits, get answers to anything, and receive a daily morning boost — all through a simple Telegram chat.</p>
+    <a class="cta" href="https://t.me/YOUR_BOT_USERNAME">💬 Open in Telegram</a>
+  </section>
+
+  <section class="features">
+    <p class="features-label">What Fluffy Fiesta can do</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="icon">📌</div>
+        <h3>Tasks &amp; Reminders</h3>
+        <p>Add tasks and recurring reminders synced to your Google Calendar automatically.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔥</div>
+        <h3>Daily Habits</h3>
+        <p>Set a daily commitment, log your progress, and build streaks over time.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">❓</div>
+        <h3>Ask Me Anything</h3>
+        <p>Get answers to any question — recipes, advice, or general knowledge.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">☀️</div>
+        <h3>Morning Check-ins</h3>
+        <p>A daily message with your tasks, streak status, and a motivational line.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="gcal-note">
+    <p>📅 <strong>Google Calendar integration</strong> — Fluffy Fiesta can add your tasks to Google Calendar when you connect your account. We only request write access and never read, store, or share your calendar data beyond creating events you ask for. You can revoke access at any time via <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</p>
+  </section>
+
+  <footer>
+    <span>© 2026 Fluffy Fiesta</span>
+    <div class="footer-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+    </div>
+  </footer>
+
+</body>
+</html>
