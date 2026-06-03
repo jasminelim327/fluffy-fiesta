@@ -757,9 +757,11 @@ async function syncTask(actionData, userId) {
   const { calendar, needsConnect, warnReconnect } = await getCalendarForUser(userId);
 
   if (calendar) {
+    const calendarOp = actionData.recurring
+      ? calendar.addRecurringEvent(actionData, 30, 30)
+      : calendar.addEvent(actionData);
     promises.push(
-      calendar.addEvent(actionData)
-        .catch(err => console.error('Google Calendar sync failed:', err.message))
+      calendarOp.catch(err => console.error('Google Calendar sync failed:', err.message))
     );
   }
 

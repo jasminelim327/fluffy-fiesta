@@ -43,14 +43,16 @@ class MessagingIntegration {
         const priorityLabel = taskData.priority
           ? taskData.priority.charAt(0).toUpperCase() + taskData.priority.slice(1)
           : 'Medium';
+        const recurringLine = taskData.recurring ? '🔁 Recurring daily (30 days)' : null;
         const msg = [
           '✅ *Task saved!*',
           '─────────────────',
           `📌 *${taskData.action}*`,
           `📅 ${taskData.deadline}`,
+          recurringLine,
           `${priorityDot} ${priorityLabel} priority`,
           `💬 _${taskData.motivation}_`
-        ].join('\n');
+        ].filter(Boolean).join('\n');
         return { chat_id: chatId, text: msg, parse_mode: 'Markdown' };
       }
 

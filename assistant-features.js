@@ -578,21 +578,36 @@ Reply with ONLY the single intent word. No punctuation, no explanation.`;
   // ============================================
 
   async parseTask(message) {
-    const systemPrompt = `You are a personal assistant. Convert the user message into a structured task.
+    const systemPrompt = `You are a personal assistant. Extract structured task info from the user message.
+
+Rules:
+- ACTION must be ONLY the core activity (e.g. "eat breakfast", "call dentist", "buy milk") — strip scheduling phrases like "set reminder", "remind me to", "schedule", "recurring", "at 10am", "tomorrow", etc.
+- DEADLINE: extract the specific time/date if mentioned (e.g. "10:00 AM", "tomorrow at 3pm", "today"), else "today"
+- PRIORITY: high/medium/low
+- MOTIVATION: one short encouraging phrase
+- RECURRING: yes if the user says "recurring", "every day", "daily", "repeat", else no
 
 Format EXACTLY as:
-ACTION: [what to do]
-DEADLINE: [when — use specific date if mentioned, else "today"]
+ACTION: [core activity only]
+DEADLINE: [when]
 PRIORITY: [high/medium/low]
-MOTIVATION: [one short encouraging phrase]`;
+MOTIVATION: [one short encouraging phrase]
+RECURRING: [yes/no]`;
 
     const response = await this._callOpenRouter(message, systemPrompt);
     const lines = (response || '').split(/\r?\n/);
-    const result = { action: '', deadline: 'today', priority: 'medium', motivation: 'You got this!' };
+    const result = { action: '', deadline: 'today', priority: 'medium', motivation: 'You got this!', recurring: false };
 
     lines.forEach(line => {
-      const m = line.match(/^\s*(ACTION|DEADLINE|PRIORITY|MOTIVATION)\s*:\s*(.+)$/i);
-      if (m) result[m[1].toLowerCase()] = m[2].trim();
+      const m = line.match(/^\s*(ACTION|DEADLINE|PRIORITY|MOTIVATION|RECURRING)\s*:\s*(.+)$/i);
+      if (!m) return;
+      const key = m[1].toLowerCase();
+      const val = m[2].trim();
+      if (key === 'recurring') {
+        result.recurring = /^yes$/i.test(val);
+      } else {
+        result[key] = val;
+      }
     });
 
     return result;
