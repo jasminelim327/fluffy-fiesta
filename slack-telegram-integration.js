@@ -212,22 +212,37 @@ class MessagingIntegration {
   }
 
   _helpMessage() {
-    return `Here are some commands I understand:
+    return `*Here's what I can do for you:*
+─────────────────
+📌 *Tasks & Reminders*
+• "Buy milk tomorrow"
+• "Call dentist on Friday at 3pm"
+• "Recurring reminder at 10am to drink water"
 
-• Set a daily commitment:
-  "Set a daily commitment to 15 min writing"
-• Log progress:
-  "I completed 15 min"
-• Check streaks:
-  "Show my streak"
-• Find forgotten tasks:
-  "Remind me about forgotten goals"
-• Get a review:
-  "Give me a weekly review"
-• Schedule something:
-  "Schedule a meeting tomorrow at 3pm"
-• Ask for help again:
-  "Help" or "What can I say?"`
+🔥 *Daily Habits*
+• "Set a daily commitment to 15 min reading"
+• "I completed 20 min" _(log progress)_
+• "Show my streak"
+
+❓ *Ask Me Anything*
+• "Give me a pasta recipe"
+• "How do I improve my sleep?"
+• "What are my tasks today?"
+
+📊 *Tracking & Insights*
+• "Energy 7" _(log your energy level 1–10)_
+• "Show my patterns"
+• "Give me a weekly review"
+• "Remind me about forgotten goals"
+
+💪 *Motivation*
+• "Motivate me"
+
+📅 *Google Calendar*
+• "Connect Google" _(link your calendar)_
+
+─────────────────
+Just type naturally — no commands needed!`
   }
 }
 
