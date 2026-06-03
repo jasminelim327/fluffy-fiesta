@@ -12,7 +12,10 @@ const cron = require('node-cron');
 const db = require('./db');
 const MessagingIntegration = require('./slack-telegram-integration');
 
+const path = require('path');
+
 const app = express();
+app.use(express.static(path.join(__dirname, 'docs')));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
