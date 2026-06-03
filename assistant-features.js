@@ -579,7 +579,7 @@ pattern - asking about work patterns ("how do I work", "show my patterns", "when
 abandoned - asking about forgotten goals ("what did I forget", "remind me abandoned goals")
 help - asking for available commands ("help", "what can you do", "commands")
 connect - linking or connecting a service account ("connect google", "link calendar", "sign in with google", "connect my calendar")
-question - any direct question the user is asking ("what is X?", "how do I...", "what's my streak?", "tell me about...", "why does...", "what are my tasks")
+question - any direct question OR request for information ("what is X?", "how do I...", "give me a recipe", "tell me about...", "explain...", "show me...", "what's my streak?", "what are my tasks")
 chat - anything else (casual talk, follow-ups that are not questions)
 
 Reply with ONLY the single intent word. No punctuation, no explanation.`;

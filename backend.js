@@ -686,7 +686,6 @@ app.listen(PORT, async () => {
     messagingIntegration = new MessagingIntegration({
       openrouterKey: OPENROUTER_KEY,
       openrouterModel: process.env.OPENROUTER_MODEL,
-      slackToken: SLACK_TOKEN,
       telegramToken: TELEGRAM_TOKEN,
       calendarSync: googleCalendar,
       onTaskCreated: syncTask,
