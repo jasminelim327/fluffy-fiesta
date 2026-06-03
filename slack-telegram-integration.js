@@ -126,6 +126,9 @@ class MessagingIntegration {
         return { chat_id: chatId, text: 'Google Calendar connection is not configured on this server.', parse_mode: 'Markdown' };
       }
 
+      case 'question':
+        return this._formatTelegramResponse(await this.assistant.answerQuestion(message, userId), chatId);
+
       default:
         return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
     }

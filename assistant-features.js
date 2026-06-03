@@ -68,6 +68,21 @@ NEXT_STEP: [what they could explore next]`;
     return response;
   }
 
+  async answerQuestion(message, userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const profileSummary = this._buildProfileSummary(profile);
+    const systemPrompt = `You are a knowledgeable and friendly assistant. Answer the user's question directly and clearly.
+- Format for Telegram: use *bold* for titles/headers, _italic_ for tips or notes
+- For lists use numbered items (1. 2. 3.) or bullet points starting with •
+- Do NOT use markdown headers (#, ##, ###), **double asterisks**, or blockquotes (>)
+- Keep responses concise and scannable
+- For personal questions use the User Context below; for general questions use your own knowledge
+
+User Context:
+${profileSummary}`;
+    return this._callOpenRouter(message, systemPrompt, userId);
+  }
+
   async answerDirectly(userMessage, userId) {
     const systemPrompt = `You are a direct assistant. Answer the user's request clearly and helpfully with no vague follow-ups.
 - Format for Telegram: use *bold* for titles/headers, _italic_ for tips or notes
@@ -564,14 +579,15 @@ pattern - asking about work patterns ("how do I work", "show my patterns", "when
 abandoned - asking about forgotten goals ("what did I forget", "remind me abandoned goals")
 help - asking for available commands ("help", "what can you do", "commands")
 connect - linking or connecting a service account ("connect google", "link calendar", "sign in with google", "connect my calendar")
-chat - anything else (casual talk, questions, follow-ups)
+question - any direct question the user is asking ("what is X?", "how do I...", "what's my streak?", "tell me about...", "why does...", "what are my tasks")
+chat - anything else (casual talk, follow-ups that are not questions)
 
 Reply with ONLY the single intent word. No punctuation, no explanation.`;
 
     try {
       const result = await this._callOpenRouter(message, systemPrompt);
       const intent = (result || '').trim().toLowerCase().replace(/[^a-z]/g, '');
-      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','chat'];
+      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','chat'];
       return valid.includes(intent) ? intent : 'chat';
     } catch {
       return 'chat';
@@ -732,6 +748,23 @@ RECURRING: [yes/no]`;
     });
 
     return result;
+  }
+
+  _buildProfileSummary(profile) {
+    const lines = [];
+    if (profile.currentStreak) lines.push(`Streak: ${profile.currentStreak} day(s)`);
+    if (profile.dailyCommitment) {
+      lines.push(`Daily commitment: ${profile.dailyCommitment.minutes}min on "${profile.dailyCommitment.description}"`);
+    }
+    const incompleteTasks = (profile.allTasks || []).filter(t => !t.completed).slice(0, 10);
+    if (incompleteTasks.length > 0) {
+      lines.push(`Tasks: ${incompleteTasks.map(t => `${t.action} (${t.deadline || 'no deadline'})`).join(', ')}`);
+    }
+    if (profile.energyLog && profile.energyLog.length > 0) {
+      const last = profile.energyLog[profile.energyLog.length - 1];
+      lines.push(`Last energy level: ${last.level}/10`);
+    }
+    return lines.length > 0 ? lines.join('\n') : 'No personal data available yet.';
   }
 
   _getTodayKey() {
