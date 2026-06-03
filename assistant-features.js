@@ -3,6 +3,7 @@
 
 const axios = require('axios');
 const db = require('./db');
+const chrono = require('chrono-node');
 
 class FriendlyAssistant {
   constructor(config) {
@@ -657,6 +658,8 @@ RECURRING: [yes/no]`;
     if (!taskData.action) return;
     const profile = await this._getOrCreateProfile(userId);
     if (!profile.allTasks) profile.allTasks = [];
+    const userTimezone = profile.timezone || 'Asia/Singapore';
+    const deadlineMs = this._parseDeadlineMs(taskData.deadline, userTimezone);
     profile.allTasks.push({
       id: this._generateId(),
       action: taskData.action,
@@ -664,6 +667,8 @@ RECURRING: [yes/no]`;
       priority: taskData.priority || 'medium',
       recurring: taskData.recurring || false,
       completed: false,
+      deadlineMs: deadlineMs || null,
+      remindedAt: null,
       created: new Date().toISOString(),
       lastTouched: new Date().toISOString()
     });
@@ -709,6 +714,27 @@ RECURRING: [yes/no]`;
     const [removed] = profile.allTasks.splice(index, 1);
     await this._saveProfile(userId, profile);
     return `🗑 *Removed* "${removed.action}" from your tasks.`;
+  }
+
+  async completeTaskById(userId, taskId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const task = (profile.allTasks || []).find(t => t.id === taskId);
+    if (!task) return null;
+    task.completed = true;
+    task.lastTouched = new Date().toISOString();
+    await this._saveProfile(userId, profile);
+    return task;
+  }
+
+  async snoozeTask(userId, taskId, minutes) {
+    const profile = await this._getOrCreateProfile(userId);
+    const task = (profile.allTasks || []).find(t => t.id === taskId);
+    if (!task) return null;
+    task.deadlineMs = Date.now() + minutes * 60 * 1000;
+    task.remindedAt = null;
+    task.lastTouched = new Date().toISOString();
+    await this._saveProfile(userId, profile);
+    return task;
   }
 
   async formatStreakMessage(userId) {
@@ -890,6 +916,18 @@ Keep it under 20 words. No emojis. Just the sentence.`;
     });
 
     return result;
+  }
+
+  _parseDeadlineMs(deadline, timezone) {
+    if (!deadline) return null;
+    const hasExplicitTime = /\d+\s*(am|pm)|at\s+\d|\d+:\d+|\bin\s+\d+\s*(hour|min)/i.test(deadline);
+    if (!hasExplicitTime) return null;
+    try {
+      const parsed = chrono.parseDate(deadline, new Date(), { timezone: timezone || 'Asia/Singapore' });
+      return parsed ? parsed.getTime() : null;
+    } catch {
+      return null;
+    }
   }
 
   _buildProfileSummary(profile) {

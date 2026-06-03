@@ -313,9 +313,44 @@ async function handleTelegramLocation(userId, chatId, latitude, longitude) {
 
 app.post('/telegram/webhook', async (req, res) => {
   const update = req.body;
-  console.log('Telegram webhook received update:', JSON.stringify(update?.message?.text || update?.message?.location || update));
+  console.log('Telegram webhook received update:', JSON.stringify(update?.message?.text || update?.callback_query?.data || update?.message?.location || update));
 
   res.send('OK');
+
+  // Handle inline button taps (Done / Snooze)
+  if (update.callback_query) {
+    const { id: callbackId, data, message } = update.callback_query;
+    const cbChatId = message.chat.id;
+    const cbMessageId = message.message_id;
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
+      callback_query_id: callbackId
+    }).catch(() => {});
+    const parts = (data || '').split(':');
+    const action = parts[0];
+    const cbUserId = parts[1];
+    const taskId = parts[2];
+    if (messagingIntegration && (action === 'done' || action === 'snooze')) {
+      try {
+        let newText;
+        if (action === 'done') {
+          const task = await messagingIntegration.assistant.completeTaskById(cbUserId, taskId);
+          newText = `✅ *Done* — ${task?.action || 'task'}`;
+        } else {
+          const task = await messagingIntegration.assistant.snoozeTask(cbUserId, taskId, 30);
+          newText = `⏰ *Snoozed* — ${task?.action || 'task'} — see you in 30min`;
+        }
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+          chat_id: cbChatId,
+          message_id: cbMessageId,
+          text: newText,
+          parse_mode: 'Markdown'
+        });
+      } catch (err) {
+        console.error('Callback action failed:', err.message);
+      }
+    }
+    return;
+  }
 
   const msg = update.message;
   if (!msg) return;
@@ -370,7 +405,7 @@ async function telegramPolling() {
     try {
       const response = await axios.get(
         `https://api.telegram.org/bot${TELEGRAM_TOKEN}/getUpdates`,
-        { params: { offset, timeout: 0, allowed_updates: ['message'] } }
+        { params: { offset, timeout: 0, allowed_updates: ['message', 'callback_query'] } }
       );
 
       for (const update of response.data.result) {
@@ -380,6 +415,41 @@ async function telegramPolling() {
         }
         processedIds.add(update.update_id);
         offset = update.update_id + 1;
+
+        // Handle inline button taps in polling mode
+        if (update.callback_query) {
+          const { id: callbackId, data, message } = update.callback_query;
+          const cbChatId = message.chat.id;
+          const cbMessageId = message.message_id;
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/answerCallbackQuery`, {
+            callback_query_id: callbackId
+          }).catch(() => {});
+          const parts = (data || '').split(':');
+          const action = parts[0];
+          const cbUserId = parts[1];
+          const taskId = parts[2];
+          if (messagingIntegration && (action === 'done' || action === 'snooze')) {
+            try {
+              let newText;
+              if (action === 'done') {
+                const task = await messagingIntegration.assistant.completeTaskById(cbUserId, taskId);
+                newText = `✅ *Done* — ${task?.action || 'task'}`;
+              } else {
+                const task = await messagingIntegration.assistant.snoozeTask(cbUserId, taskId, 30);
+                newText = `⏰ *Snoozed* — ${task?.action || 'task'} — see you in 30min`;
+              }
+              await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+                chat_id: cbChatId,
+                message_id: cbMessageId,
+                text: newText,
+                parse_mode: 'Markdown'
+              });
+            } catch (err) {
+              console.error('Polling callback action failed:', err.message);
+            }
+          }
+          continue;
+        }
 
         const msg = update.message;
         if (!msg) continue;
@@ -725,6 +795,46 @@ app.listen(PORT, async () => {
     }
   });
   console.log('⏰ Hourly cron active — daily messages fire at each user\'s preferred hour (default 8am)');
+
+  // Per-minute reminder cron — fires tasks with deadlineMs in the current minute window
+  cron.schedule('* * * * *', async () => {
+    if (!messagingIntegration || !TELEGRAM_TOKEN) return;
+    const users = await db.getAllUsersWithTelegram().catch(() => []);
+    const now = Date.now();
+    const windowEnd = now + 60000;
+
+    for (const user of users) {
+      if (!user.telegramChatId) continue;
+      const dueTasks = (user.allTasks || []).filter(t =>
+        !t.completed && !t.remindedAt && t.deadlineMs &&
+        t.deadlineMs >= now && t.deadlineMs < windowEnd
+      );
+      for (const task of dueTasks) {
+        try {
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+            chat_id: user.telegramChatId,
+            text: `⏰ *Reminder:* ${task.action}`,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '✅ Done', callback_data: `done:${user.userId}:${task.id}` },
+                { text: '⏰ Snooze 30min', callback_data: `snooze:${user.userId}:${task.id}` }
+              ]]
+            }
+          });
+          task.remindedAt = Date.now();
+        } catch (err) {
+          console.error(`Reminder failed for user ${user.userId}:`, err.message);
+        }
+      }
+      if (dueTasks.length > 0) {
+        await db.saveUserProfile(user.userId, user).catch(err =>
+          console.error(`Failed to save remindedAt for user ${user.userId}:`, err.message)
+        );
+      }
+    }
+  });
+  console.log('⏱ Per-minute reminder cron active');
 
   // Start Telegram polling if webhook not used
   if (!process.env.USE_TELEGRAM_WEBHOOK) {
