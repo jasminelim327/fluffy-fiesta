@@ -702,15 +702,17 @@ app.listen(PORT, async () => {
     console.warn('Could not initialize MessagingIntegration:', err.message || err);
   }
   
-  // Daily morning message — 8am Singapore time
-  const dailyMsgTime = process.env.DAILY_MESSAGE_TIME || '0 8 * * *';
-  const dailyMsgTimezone = process.env.DAILY_MESSAGE_TIMEZONE || 'Asia/Singapore';
-  cron.schedule(dailyMsgTime, async () => {
+  // Daily morning message — runs every hour, fires for each user at their preferred local hour
+  cron.schedule('0 * * * *', async () => {
     if (!messagingIntegration || !TELEGRAM_TOKEN) return;
-    console.log('📅 Sending daily morning messages...');
     const users = await db.getAllUsersWithTelegram().catch(() => []);
     for (const user of users) {
       try {
+        const tz = user.timezone || process.env.DAILY_MESSAGE_TIMEZONE || 'Asia/Singapore';
+        const localHour = parseInt(new Date().toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }));
+        const preferredHour = user.preferredHour !== undefined ? user.preferredHour : 8;
+        if (localHour !== preferredHour) continue;
+        console.log(`📅 Sending daily message to user ${user.userId} (${tz}, hour ${localHour})`);
         const text = await messagingIntegration.assistant.buildDailyMessage(user.userId);
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
           chat_id: user.telegramChatId,
@@ -721,8 +723,8 @@ app.listen(PORT, async () => {
         console.error(`Daily message failed for user ${user.userId}:`, err.message);
       }
     }
-  }, { timezone: dailyMsgTimezone });
-  console.log(`⏰ Daily message scheduled at ${dailyMsgTime} (${dailyMsgTimezone})`);
+  });
+  console.log('⏰ Hourly cron active — daily messages fire at each user\'s preferred hour (default 8am)');
 
   // Start Telegram polling if webhook not used
   if (!process.env.USE_TELEGRAM_WEBHOOK) {

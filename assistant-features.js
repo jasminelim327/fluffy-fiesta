@@ -567,6 +567,11 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
       return 'task';
     }
 
+    // Fast-path: streak queries
+    if (/\b(streak|how many days)\b/i.test(normalized)) {
+      return 'streak';
+    }
+
     const systemPrompt = `Classify the user message into exactly one intent word from this list:
 task - adding a to-do, reminder, or chore ("buy milk", "remind me to call", "don't forget...", "set reminder", "recurring reminder")
 schedule - booking an event at a specific date/time ("meeting tomorrow 3pm", "dentist on Friday")
@@ -579,7 +584,12 @@ pattern - asking about work patterns ("how do I work", "show my patterns", "when
 abandoned - asking about forgotten goals ("what did I forget", "remind me abandoned goals")
 help - asking for available commands ("help", "what can you do", "commands")
 connect - linking or connecting a service account ("connect google", "link calendar", "sign in with google", "connect my calendar")
-question - any direct question OR request for information ("what is X?", "how do I...", "give me a recipe", "tell me about...", "explain...", "show me...", "what's my streak?", "what are my tasks")
+question - any direct question OR request for information ("what is X?", "how do I...", "give me a recipe", "tell me about...", "explain...", "show me...")
+list - viewing saved tasks ("show my tasks", "what do I have today", "list tasks", "what's on my plate", "my to-do list")
+complete - marking a task as done ("done with X", "finished X", "mark X done", "completed the X task", "I did X")
+delete - removing a task entirely ("remove X", "delete X task", "cancel X", "get rid of X")
+streak - checking habit streak ("show my streak", "what's my streak", "streak status", "my streak")
+dailyconfig - setting preferred daily message time ("send my daily message at 7am", "daily message at 9", "change morning message to 6am")
 chat - anything else (casual talk, follow-ups that are not questions)
 
 Reply with ONLY the single intent word. No punctuation, no explanation.`;
@@ -587,7 +597,7 @@ Reply with ONLY the single intent word. No punctuation, no explanation.`;
     try {
       const result = await this._callOpenRouter(message, systemPrompt);
       const intent = (result || '').trim().toLowerCase().replace(/[^a-z]/g, '');
-      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','chat'];
+      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','streak','dailyconfig','chat'];
       return valid.includes(intent) ? intent : 'chat';
     } catch {
       return 'chat';
@@ -637,6 +647,108 @@ RECURRING: [yes/no]`;
     }
 
     return result;
+  }
+
+  // ============================================
+  // TASK MANAGEMENT - Save, list, complete, delete
+  // ============================================
+
+  async saveTask(userId, taskData) {
+    if (!taskData.action) return;
+    const profile = await this._getOrCreateProfile(userId);
+    if (!profile.allTasks) profile.allTasks = [];
+    profile.allTasks.push({
+      id: this._generateId(),
+      action: taskData.action,
+      deadline: taskData.deadline || 'today',
+      priority: taskData.priority || 'medium',
+      recurring: taskData.recurring || false,
+      completed: false,
+      created: new Date().toISOString(),
+      lastTouched: new Date().toISOString()
+    });
+    await this._saveProfile(userId, profile);
+  }
+
+  async listTasks(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const tasks = (profile.allTasks || []).filter(t => !t.completed);
+    if (tasks.length === 0) {
+      return '✨ *No tasks yet!*\nTell me something like "Buy milk tomorrow" to add one.';
+    }
+    const lines = ['📋 *Your tasks:*', '─────────────────'];
+    tasks.forEach((t, i) => lines.push(`${i + 1}. ${t.action} — _${t.deadline}_`));
+    lines.push('', '💡 Say "done with [task]" to tick one off.');
+    return lines.join('\n');
+  }
+
+  async completeTask(userId, message) {
+    const profile = await this._getOrCreateProfile(userId);
+    const lower = message.toLowerCase();
+    const task = (profile.allTasks || []).find(t =>
+      !t.completed && (lower.includes(t.action.toLowerCase()) || t.action.toLowerCase().includes(lower))
+    );
+    if (!task) {
+      return "Hmm, I couldn't find that task. Say *\"show my tasks\"* to see what's on your list.";
+    }
+    task.completed = true;
+    task.lastTouched = new Date().toISOString();
+    await this._saveProfile(userId, profile);
+    return `✅ *Done!* "${task.action}" marked as complete.\n🔥 Keep the momentum going!`;
+  }
+
+  async deleteTask(userId, message) {
+    const profile = await this._getOrCreateProfile(userId);
+    const lower = message.toLowerCase();
+    const index = (profile.allTasks || []).findIndex(t =>
+      !t.completed && (lower.includes(t.action.toLowerCase()) || t.action.toLowerCase().includes(lower))
+    );
+    if (index === -1) {
+      return "Hmm, I couldn't find that task. Say *\"show my tasks\"* to see what's on your list.";
+    }
+    const [removed] = profile.allTasks.splice(index, 1);
+    await this._saveProfile(userId, profile);
+    return `🗑 *Removed* "${removed.action}" from your tasks.`;
+  }
+
+  async formatStreakMessage(userId) {
+    const s = await this.getStreakStatus(userId);
+    if (!s.dailyCommitment) {
+      return 'No daily commitment set yet.\nSay *"set a daily commitment to 15 min reading"* to start one!';
+    }
+    const todayLine = s.todayComplete ? '✅ Today: completed' : '⏳ Today: not yet';
+    return [
+      `🔥 *Your streak: ${s.currentStreak} day(s)*`,
+      '─────────────────',
+      `🎯 Daily goal: ${s.dailyCommitment.minutes}min ${s.dailyCommitment.description}`,
+      todayLine,
+      '💪 Keep it going!'
+    ].join('\n');
+  }
+
+  async setDailyMessageTime(userId, message) {
+    const hourMatch = message.match(/(\d{1,2})\s*(am|pm)?/i);
+    if (!hourMatch) {
+      return "I couldn't parse that time. Try something like *\"send my daily message at 7am\"*.";
+    }
+    let hour = parseInt(hourMatch[1]);
+    const meridiem = (hourMatch[2] || '').toLowerCase();
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+    if (hour < 0 || hour > 23) return 'Please give a valid hour between 0 and 23.';
+    const profile = await this._getOrCreateProfile(userId);
+    profile.preferredHour = hour;
+    await this._saveProfile(userId, profile);
+    const display = hour === 0 ? '12:00 AM' : hour < 12 ? `${hour}:00 AM` : hour === 12 ? '12:00 PM' : `${hour - 12}:00 PM`;
+    return `⏰ Got it! I'll send your morning message at *${display}* every day.`;
+  }
+
+  async getWelcomeIfNew(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    if (profile.welcomed) return null;
+    profile.welcomed = true;
+    await this._saveProfile(userId, profile);
+    return '👋 *Welcome to Fluffy Fiesta!*\nI\'m your personal productivity companion on Telegram.\nType *"help"* anytime to see everything I can do.\n─────────────────';
   }
 
   // ============================================

@@ -20,6 +20,13 @@ class MessagingIntegration {
   // ============================================
 
   async handleTelegramMessage(message, userId, chatId) {
+    const welcome = await this.assistant.getWelcomeIfNew(userId);
+    if (welcome) {
+      await this.sendToTelegram(chatId, welcome).catch(err =>
+        console.error('Welcome message failed:', err.message)
+      );
+    }
+
     const intent = await this.assistant.classifyIntent(message);
     console.log(`Intent classified as "${intent}" for message:`, message);
 
@@ -30,6 +37,9 @@ class MessagingIntegration {
       case 'task':
       case 'schedule': {
         const taskData = await this.assistant.parseTask(message);
+        await this.assistant.saveTask(userId, taskData).catch(err =>
+          console.error('Task save failed:', err.message)
+        );
         if (this.onTaskCreated) {
           await this.onTaskCreated(taskData, userId).catch(err =>
             console.error('Task sync failed:', err.message)
@@ -124,6 +134,21 @@ class MessagingIntegration {
 
       case 'question':
         return this._formatTelegramResponse(await this.assistant.answerQuestion(message, userId), chatId);
+
+      case 'list':
+        return this._formatTelegramResponse(await this.assistant.listTasks(userId), chatId);
+
+      case 'complete':
+        return this._formatTelegramResponse(await this.assistant.completeTask(userId, message), chatId);
+
+      case 'delete':
+        return this._formatTelegramResponse(await this.assistant.deleteTask(userId, message), chatId);
+
+      case 'streak':
+        return this._formatTelegramResponse(await this.assistant.formatStreakMessage(userId), chatId);
+
+      case 'dailyconfig':
+        return this._formatTelegramResponse(await this.assistant.setDailyMessageTime(userId, message), chatId);
 
       default:
         return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
