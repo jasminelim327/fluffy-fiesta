@@ -1133,6 +1133,98 @@ Keep it under 20 words. No emojis. Just the sentence.`;
     return { goal, text: lines.join('\n') };
   }
 
+  async _generateMilestones(title, why, timeline) {
+    const monthMatch = timeline.match(/(\d+)\s*month/i);
+    const weekMatch = timeline.match(/(\d+)\s*week/i);
+    const totalDays = monthMatch ? parseInt(monthMatch[1]) * 30
+      : weekMatch ? parseInt(weekMatch[1]) * 7
+      : 90;
+
+    const systemPrompt = `Generate 4-5 concrete, measurable milestones for this goal. Each milestone should be a clear checkpoint.
+
+Goal: ${title}
+Why it matters: ${why}
+Timeline: ${timeline}
+
+Reply with ONLY a numbered list, one milestone per line:
+1. [milestone name]
+2. [milestone name]
+...
+
+Milestones must be specific, achievable, and in chronological order. No explanations.`;
+
+    const raw = await this._callOpenRouter(`Milestones for: ${title}`, systemPrompt);
+    const milestones = [];
+    raw.split('\n').forEach(line => {
+      const match = line.match(/^\d+[.)]\s*(.+)/);
+      if (match && milestones.length < 5) {
+        milestones.push({
+          name: match[1].trim(),
+          daysUntil: Math.round(totalDays * (milestones.length + 1) / 5)
+        });
+      }
+    });
+    return milestones.length > 0 ? milestones : [{ name: 'First milestone', daysUntil: 30 }];
+  }
+
+  async _reviseMilestones(currentMilestones, feedback) {
+    const systemPrompt = `Update this milestone list based on user feedback. Keep changes minimal.
+
+Current milestones:
+${currentMilestones.map((m, i) => `${i + 1}. ${m.name}`).join('\n')}
+
+User feedback: "${feedback}"
+
+Reply with ONLY the updated numbered list:
+1. [milestone name]
+2. [milestone name]
+...`;
+
+    const raw = await this._callOpenRouter('Update milestones', systemPrompt);
+    const updated = [];
+    raw.split('\n').forEach(line => {
+      const match = line.match(/^\d+[.)]\s*(.+)/);
+      if (match) updated.push({ name: match[1].trim(), daysUntil: 30 });
+    });
+    return updated.length > 0 ? updated : currentMilestones;
+  }
+
+  async markMilestoneByText(userId, message) {
+    const profile = await this._getOrCreateProfile(userId);
+    const goals = (profile.longTermGoals || []).filter(g => g.status === 'active');
+    if (goals.length === 0) {
+      return "You don't have any active long-term goals. Say _\"I want to...\"_ to set one.";
+    }
+
+    const candidates = goals.flatMap(g =>
+      (g.milestonesProgress || []).map((m, i) => ({
+        goalId: g.id, goalTitle: g.title, milestoneIndex: i, name: m.name, completed: m.completed
+      }))
+    ).filter(m => !m.completed);
+
+    if (candidates.length === 0) return 'All your milestones are already done! 🎉';
+
+    const systemPrompt = `Match the user message to the most likely milestone being completed.
+
+Message: "${message}"
+
+Incomplete milestones:
+${candidates.map((m, i) => `${i}: [${m.goalTitle}] ${m.name}`).join('\n')}
+
+Reply with ONLY the index number (0, 1, 2…) of the best match. If no match, reply "none".`;
+
+    const raw = await this._callOpenRouter(message, systemPrompt);
+    const trimmed = raw.trim().toLowerCase();
+    const idx = parseInt(trimmed);
+    if (trimmed === 'none' || isNaN(idx) || !candidates[idx]) {
+      return "I couldn't match that to a milestone. Tap 📍 on your goals to see and complete milestones.";
+    }
+
+    const match = candidates[idx];
+    const result = await this.progressMilestone(userId, match.goalId, match.milestoneIndex);
+    return typeof result === 'object' ? result.message : result;
+  }
+
   // ============================================
   // UPCOMING REMINDERS - Tasks due soon
   // ============================================
