@@ -974,7 +974,8 @@ Reply ONLY with these 3 lines. No other text.`;
         calendarId: 'primary',
         timezone: tz
       });
-      await cal.initialize();
+      const ok = await cal.initialize();
+      if (!ok) return false;
       await cal.deleteEvent(eventId);
       return true;
     } catch (err) {
