@@ -105,3 +105,27 @@ test('_goalProgressBar shows 100% and done message when all complete', () => {
   expect(result.bar).toBe('▓▓▓▓▓▓▓▓▓▓');
   expect(result.next).toBe('All done! 🎉');
 });
+
+test('getTodayCalendarEvents returns [] when no googleCredentials configured', async () => {
+  const a = new FriendlyAssistant({ openrouterKey: 'test' });
+  const result = await a.getTodayCalendarEvents('user123');
+  expect(result).toEqual([]);
+});
+
+test('_buildDailySnapshot shows calendar events line when events provided', () => {
+  const profile = { allTasks: [], dailyCommitment: null, currentStreak: 0, energyLog: [], timezone: 'UTC' };
+  const events = [
+    { id: 'e1', title: 'Standup', start: '2026-06-04T09:00:00Z' },
+    { id: 'e2', title: 'Design review', start: '2026-06-04T14:00:00Z' }
+  ];
+  const snapshot = assistant._buildDailySnapshot(profile, events);
+  expect(snapshot).toContain('2 events today');
+  expect(snapshot).toContain('Standup');
+  expect(snapshot).toContain('Design review');
+});
+
+test('_buildDailySnapshot with no calendar events is unchanged', () => {
+  const profile = { allTasks: [], dailyCommitment: null, currentStreak: 0, energyLog: [], timezone: 'UTC' };
+  const snapshot = assistant._buildDailySnapshot(profile, []);
+  expect(snapshot).not.toContain('events today');
+});

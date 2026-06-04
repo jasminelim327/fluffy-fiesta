@@ -4,12 +4,14 @@
 const axios = require('axios');
 const db = require('./db');
 const chrono = require('chrono-node');
+const GoogleCalendarSync = require('./google-calendar');
 
 class FriendlyAssistant {
   constructor(config) {
     this.openrouterKey = config.openrouterKey;
     this.openrouterModel = config.openrouterModel || process.env.OPENROUTER_MODEL || 'gpt-4o-mini';
     this.openrouterUrl = 'https://openrouter.ai/api/v1/chat/completions';
+    this.googleCredentials = config.googleCredentials || null;
     this.userProfiles = new Map(); // In-memory; use DB in production
     this.conversationHistory = new Map(); // Keep context for each user
   }
@@ -935,6 +937,50 @@ Reply ONLY with these 3 lines. No other text.`;
     const [removed] = profile.allTasks.splice(index, 1);
     await this._saveProfile(userId, profile);
     return `🗑 *Removed* "${removed.action}" from your tasks.`;
+  }
+
+  async getTodayCalendarEvents(userId) {
+    if (!this.googleCredentials) return [];
+    try {
+      const token = await db.getGoogleToken(userId);
+      if (!token) return [];
+      const profile = await this._getOrCreateProfile(userId);
+      const tz = profile.timezone || 'Asia/Singapore';
+      const cal = new GoogleCalendarSync({
+        credentials: this.googleCredentials,
+        tokenJson: token,
+        calendarId: 'primary',
+        timezone: tz
+      });
+      const ok = await cal.initialize();
+      if (!ok) return [];
+      return await cal.getTodayEvents(tz);
+    } catch (err) {
+      console.error(`getTodayCalendarEvents(${userId}) failed:`, err.message);
+      return [];
+    }
+  }
+
+  async deleteCalendarEvent(userId, eventId) {
+    if (!this.googleCredentials) return false;
+    try {
+      const token = await db.getGoogleToken(userId);
+      if (!token) return false;
+      const profile = await this._getOrCreateProfile(userId);
+      const tz = profile.timezone || 'Asia/Singapore';
+      const cal = new GoogleCalendarSync({
+        credentials: this.googleCredentials,
+        tokenJson: token,
+        calendarId: 'primary',
+        timezone: tz
+      });
+      await cal.initialize();
+      await cal.deleteEvent(eventId);
+      return true;
+    } catch (err) {
+      console.error(`deleteCalendarEvent(${userId}, ${eventId}) failed:`, err.message);
+      return false;
+    }
   }
 
   async completeTaskById(userId, taskId) {
