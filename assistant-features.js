@@ -757,20 +757,56 @@ RECURRING: [yes/no]`;
   }
 
   async setDailyMessageTime(userId, message) {
-    const hourMatch = message.match(/(\d{1,2})\s*(am|pm)?/i);
-    if (!hourMatch) {
-      return "I couldn't parse that time. Try something like *\"send my daily message at 7am\"*.";
+    const lower = message.toLowerCase();
+
+    // Detect "off" / "disable"
+    const isOff = /\b(off|disable|stop|never)\b/.test(lower);
+
+    // Parse hour
+    const hourMatch = message.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    let hour = null;
+    if (hourMatch && !isOff) {
+      hour = parseInt(hourMatch[1]);
+      const meridiem = (hourMatch[3] || '').toLowerCase();
+      if (meridiem === 'pm' && hour < 12) hour += 12;
+      if (meridiem === 'am' && hour === 12) hour = 0;
+      if (hour < 0 || hour > 23) {
+        return 'Please give a valid hour between 0 and 23.';
+      }
     }
-    let hour = parseInt(hourMatch[1]);
-    const meridiem = (hourMatch[2] || '').toLowerCase();
-    if (meridiem === 'pm' && hour < 12) hour += 12;
-    if (meridiem === 'am' && hour === 12) hour = 0;
-    if (hour < 0 || hour > 23) return 'Please give a valid hour between 0 and 23.';
+
+    // Detect which job to configure
+    let field, jobName;
+    if (/habit|nudge|streak reminder/i.test(lower)) {
+      field = 'habitNudgeTime'; jobName = 'habit nudge';
+    } else if (/energy|check.?in/i.test(lower)) {
+      field = 'energyCheckTime'; jobName = 'energy check-in';
+    } else if (/weekly|review|sunday/i.test(lower)) {
+      field = 'weeklyReviewTime'; jobName = 'weekly review';
+    } else {
+      // Default: morning brief
+      field = 'morningBriefTime'; jobName = 'morning brief';
+    }
+
     const profile = await this._getOrCreateProfile(userId);
-    profile.preferredHour = hour;
+
+    if (isOff) {
+      profile[field] = null;
+      await this._saveProfile(userId, profile);
+      return `⏰ Got it! Your ${jobName} has been turned off.`;
+    }
+
+    if (hour === null) {
+      return 'I couldn\'t parse that time. Try something like *"morning brief at 7am"* or *"energy check at 9pm"*.';
+    }
+
+    profile[field] = hour;
+    // Keep preferredHour in sync for backwards compatibility with the existing morning cron
+    if (field === 'morningBriefTime') profile.preferredHour = hour;
     await this._saveProfile(userId, profile);
+
     const display = hour === 0 ? '12:00 AM' : hour < 12 ? `${hour}:00 AM` : hour === 12 ? '12:00 PM' : `${hour - 12}:00 PM`;
-    return `⏰ Got it! I'll send your morning message at *${display}* every day.`;
+    return `⏰ Got it! Your ${jobName} is now set to *${display}* every day.`;
   }
 
   async getWelcomeIfNew(userId) {
