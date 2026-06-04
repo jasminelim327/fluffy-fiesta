@@ -29,6 +29,14 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
+const SHORTCUT_MAP = {
+  list: 'list my tasks',
+  streak: 'show my streak',
+  motivation: 'motivate me',
+  patterns: 'show my patterns',
+  goals: 'check abandoned goals'
+};
+
 // Startup checks: warn when critical env vars are missing
 if (!OPENROUTER_KEY) console.warn('⚠️ OPENROUTER_API_KEY not set. OpenRouter requests will fail.');
 if (!TELEGRAM_TOKEN) console.warn('⚠️ TELEGRAM_BOT_TOKEN not set — Telegram integration disabled.');
@@ -349,18 +357,11 @@ app.post('/telegram/webhook', async (req, res) => {
         console.error('Callback action failed:', err.message);
       }
     } else if (action === 'shortcut' && messagingIntegration) {
-      const shortcutMap = {
-        list: 'list my tasks',
-        streak: 'show my streak',
-        motivation: 'motivate me',
-        patterns: 'show my patterns',
-        goals: 'check abandoned goals'
-      };
       const target = parts[2];
       const cbUserId = parts[1];
-      if (shortcutMap[target]) {
+      if (SHORTCUT_MAP[target]) {
         try {
-          const formatted = await messagingIntegration.handleTelegramMessage(shortcutMap[target], cbUserId, cbChatId);
+          const formatted = await messagingIntegration.handleTelegramMessage(SHORTCUT_MAP[target], cbUserId, cbChatId);
           await messagingIntegration.sendToTelegram(formatted.chat_id || cbChatId, formatted.text, {
             parse_mode: formatted.parse_mode,
             reply_markup: formatted.reply_markup
@@ -469,18 +470,11 @@ async function telegramPolling() {
               console.error('Polling callback action failed:', err.message);
             }
           } else if (action === 'shortcut' && messagingIntegration) {
-            const shortcutMap = {
-              list: 'list my tasks',
-              streak: 'show my streak',
-              motivation: 'motivate me',
-              patterns: 'show my patterns',
-              goals: 'check abandoned goals'
-            };
             const target = parts[2];
             const cbUserId = parts[1];
-            if (shortcutMap[target]) {
+            if (SHORTCUT_MAP[target]) {
               try {
-                const formatted = await messagingIntegration.handleTelegramMessage(shortcutMap[target], cbUserId, cbChatId);
+                const formatted = await messagingIntegration.handleTelegramMessage(SHORTCUT_MAP[target], cbUserId, cbChatId);
                 await messagingIntegration.sendToTelegram(formatted.chat_id || cbChatId, formatted.text, {
                   parse_mode: formatted.parse_mode,
                   reply_markup: formatted.reply_markup

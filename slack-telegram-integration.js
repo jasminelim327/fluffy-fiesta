@@ -33,7 +33,10 @@ class MessagingIntegration {
       '💪 Motivate Me': 'motivation',
       '📊 Patterns': 'pattern',
       '📅 Weekly Review': 'review',
-      '❓ Help': 'help'
+      '❓ Help': 'help',
+      // Shortcut callback strings — bypass LLM for these too
+      'show my patterns': 'pattern',
+      'check abandoned goals': 'abandoned'
     };
     return map[text] || null;
   }
