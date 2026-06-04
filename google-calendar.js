@@ -248,15 +248,17 @@ class GoogleCalendarSync {
       const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
       const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(tomorrowDate);
 
-      // Detect tz offset by checking what hour it is in the tz when UTC is noon
+      // Detect tz offset by checking what hour and minute it is in the tz when UTC is noon
       const refDate = new Date(todayStr + 'T12:00:00Z');
-      const tzHour = parseInt(new Intl.DateTimeFormat('en-US', {
-        timeZone: tz, hour: 'numeric', hour12: false
-      }).format(refDate));
-      const offsetHours = tzHour - 12;
+      const tzParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: false
+      }).formatToParts(refDate);
+      const tzHour = parseInt(tzParts.find(p => p.type === 'hour').value);
+      const tzMinute = parseInt(tzParts.find(p => p.type === 'minute').value);
+      const offsetMinutes = (tzHour - 12) * 60 + tzMinute;
 
-      const timeMin = new Date(new Date(todayStr + 'T00:00:00Z').getTime() - offsetHours * 3600000).toISOString();
-      const timeMax = new Date(new Date(tomorrowStr + 'T00:00:00Z').getTime() - offsetHours * 3600000).toISOString();
+      const timeMin = new Date(new Date(todayStr + 'T00:00:00Z').getTime() - offsetMinutes * 60000).toISOString();
+      const timeMax = new Date(new Date(tomorrowStr + 'T00:00:00Z').getTime() - offsetMinutes * 60000).toISOString();
 
       const response = await calendar.events.list({
         calendarId: this.calendarId,
