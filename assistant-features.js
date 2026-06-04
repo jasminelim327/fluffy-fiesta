@@ -1089,6 +1089,16 @@ Keep it under 20 words. No emojis. Just the sentence.`;
     return `${commitment.minutes}min ${commitment.description}`;
   }
 
+  _goalProgressBar(milestonesProgress) {
+    const total = milestonesProgress.length;
+    const done = milestonesProgress.filter(m => m.completed).length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const filled = Math.round(pct / 10);
+    const bar = '▓'.repeat(filled) + '░'.repeat(10 - filled);
+    const next = milestonesProgress.find(m => !m.completed)?.name || 'All done! 🎉';
+    return { bar, pct, done, total, next };
+  }
+
   // ============================================
   // UPCOMING REMINDERS - Tasks due soon
   // ============================================

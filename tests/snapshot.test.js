@@ -79,3 +79,29 @@ test('_buildDailySnapshot counts tasks due in next 24h', () => {
   const snapshot = assistant._buildDailySnapshot(profile);
   expect(snapshot).toContain('1 task');
 });
+
+test('_goalProgressBar shows 0% for no completed milestones', () => {
+  const ms = [{ name: 'MVP', completed: false }, { name: 'Launch', completed: false }];
+  const result = assistant._goalProgressBar(ms);
+  expect(result.pct).toBe(0);
+  expect(result.done).toBe(0);
+  expect(result.total).toBe(2);
+  expect(result.bar).toBe('░░░░░░░░░░');
+  expect(result.next).toBe('MVP');
+});
+
+test('_goalProgressBar shows 50% when half complete', () => {
+  const ms = [{ name: 'MVP', completed: true }, { name: 'Launch', completed: false }];
+  const result = assistant._goalProgressBar(ms);
+  expect(result.pct).toBe(50);
+  expect(result.done).toBe(1);
+  expect(result.next).toBe('Launch');
+});
+
+test('_goalProgressBar shows 100% and done message when all complete', () => {
+  const ms = [{ name: 'MVP', completed: true }];
+  const result = assistant._goalProgressBar(ms);
+  expect(result.pct).toBe(100);
+  expect(result.bar).toBe('▓▓▓▓▓▓▓▓▓▓');
+  expect(result.next).toBe('All done! 🎉');
+});
