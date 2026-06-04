@@ -206,28 +206,18 @@ ${profileSummary}`;
       abandoned.slice(0, 3).map(task => this._generateAbandonmentReminder(task, userId))
     );
 
-    return reminders;
+    return reminders.join('\n\n─────────────────\n\n');
   }
 
   async _generateAbandonmentReminder(task, userId) {
     const systemPrompt = `You are a supportive friend reminding someone about a goal they abandoned.
-Be warm, non-judgmental, and encouraging. Show you understand it's hard to keep going.
-Offer perspective on why this matters and how to restart without shame.
-
-Format:
-WARM_OPENING: [acknowledge the gap with empathy]
-WHY_IT_MATTERS: [remind them why this goal was important to them]
-NO_SHAME: [it's okay they stepped back, here's how to restart]
-SMALL_RESTART: [one tiny action to get momentum back]`;
+Be warm, non-judgmental, and encouraging. Write 3-4 natural sentences — no labels or headers.
+Cover: acknowledge the gap, why this goal matters, that it's okay to restart, and one tiny first action.`;
 
     const message = `I noticed you haven't touched "${task.action}" since ${this._daysAgo(task.lastTouched)}. That was important to you.`;
-    
+
     const response = await this._callOpenRouter(message, systemPrompt);
-    return {
-      task: task.action,
-      reminder: response,
-      taskId: task.id
-    };
+    return `📌 *${task.action}*\n\n${response.trim()}`;
   }
 
   // ============================================
@@ -259,19 +249,34 @@ Based on this week's data:
 - Most active: ${weekStats.mostActiveDay}
 - Energy pattern: ${weekStats.energyPattern}
 
-Format:
-CELEBRATION: [what they did well this week]
-PATTERNS: [what you notice about how they work]
-CHALLENGE: [what tripped them up]
-MOMENTUM: [how to build on wins next week]
-PERSONAL_NOTE: [warm closing about their potential]`;
+Reply in exactly this format (no extra text before or after):
+CELEBRATION: [what they did well this week — 2 sentences]
+PATTERNS: [what you notice about how they work — 2 sentences]
+CHALLENGE: [what tripped them up — 1-2 sentences]
+MOMENTUM: [how to build on wins next week — 1-2 sentences]
+PERSONAL_NOTE: [warm closing — 1 sentence]`;
 
-    const response = await this._callOpenRouter('Do my weekly review', systemPrompt);
-    return {
-      stats: weekStats,
-      review: response,
-      nextWeekTips: await this._suggestNextWeek(userId, weekStats)
+    const raw = await this._callOpenRouter('Do my weekly review', systemPrompt);
+
+    const get = (label) => {
+      const match = raw.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i'));
+      return match ? match[1].trim() : null;
     };
+
+    const lines = [];
+    const celebration = get('CELEBRATION');
+    const patterns   = get('PATTERNS');
+    const challenge  = get('CHALLENGE');
+    const momentum   = get('MOMENTUM');
+    const note       = get('PERSONAL.?NOTE');
+
+    if (celebration) lines.push(`🎉 *This week*\n${celebration}`);
+    if (patterns)    lines.push(`🔍 *Patterns*\n${patterns}`);
+    if (challenge)   lines.push(`⚡ *What tripped you up*\n${challenge}`);
+    if (momentum)    lines.push(`🚀 *Next week*\n${momentum}`);
+    if (note)        lines.push(`💙 ${note}`);
+
+    return lines.length > 0 ? lines.join('\n\n') : raw;
   }
 
   // ============================================
@@ -427,18 +432,31 @@ Be insightful but kind. Show you see the person behind the data.
 
 ${JSON.stringify(analysis, null, 2)}
 
-Format:
-INSIGHT: [what you notice about how they work]
-GOOD_NEWS: [what they're doing right]
-GENTLE_CHALLENGE: [what might be holding them back]
-EXPERIMENT: [one small behavior change to test]`;
+Reply in exactly this format (no extra text before or after):
+INSIGHT: [what you notice about how they work — 2-3 sentences]
+GOOD_NEWS: [what they're doing right — 2-3 sentences]
+GENTLE_CHALLENGE: [what might be holding them back — 2-3 sentences]
+EXPERIMENT: [one concrete small behavior change to try this week — 1-2 sentences]`;
 
-    const response = await this._callOpenRouter('Analyze my patterns', systemPrompt);
+    const raw = await this._callOpenRouter('Analyze my patterns', systemPrompt);
 
-    return {
-      analysis,
-      advice: response
+    // Parse the labelled sections and format for Telegram
+    const get = (label) => {
+      const match = raw.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i'));
+      return match ? match[1].trim() : null;
     };
+    const insight = get('INSIGHT');
+    const goodNews = get('GOOD.?NEWS');
+    const challenge = get('GENTLE.?CHALLENGE');
+    const experiment = get('EXPERIMENT');
+
+    const lines = [];
+    if (insight)    lines.push(`🔍 *Insight*\n${insight}`);
+    if (goodNews)   lines.push(`✅ *Good news*\n${goodNews}`);
+    if (challenge)  lines.push(`🎯 *Gentle challenge*\n${challenge}`);
+    if (experiment) lines.push(`🧪 *Try this week*\n${experiment}`);
+
+    return lines.length > 0 ? lines.join('\n\n') : raw;
   }
 
   // ============================================
