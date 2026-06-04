@@ -73,6 +73,9 @@ class MessagingIntegration {
     if (profile.onboardingStep === 'awaiting_habit' && !this._resolveKeyboardShortcut(message)) {
       return this._handleOnboardingReply(message, userId, chatId);
     }
+    if (profile.goalDraft?.step && !this._resolveKeyboardShortcut(message)) {
+      return this._handleGoalDraft(message, userId, chatId, profile);
+    }
 
     const welcome = await this.assistant.getWelcomeIfNew(userId);
     if (welcome) {
@@ -381,6 +384,95 @@ class MessagingIntegration {
       parse_mode: 'Markdown',
       reply_markup: this._persistentKeyboard()
     };
+  }
+
+  async _handleGoalDraft(message, userId, chatId, profile) {
+    const draft = profile.goalDraft;
+
+    // Allow cancellation at any step
+    if (/^(cancel|stop|restart|start over|never mind|abort)\b/i.test(message.trim())) {
+      await this.assistant.updateProfileMeta(userId, { goalDraft: null });
+      return this._formatTelegramResponse(
+        'Goal draft cancelled. Say _"I want to..."_ whenever you\'re ready to set a big goal.',
+        chatId
+      );
+    }
+
+    if (draft.step === 'awaiting_title') {
+      const title = message.trim();
+      await this.assistant.updateProfileMeta(userId, {
+        goalDraft: { step: 'awaiting_why', title, why: null, timeline: null, proposedMilestones: [] }
+      });
+      return {
+        chat_id: chatId,
+        text: `✨ *${title}* — love it.\n\nWhy does this matter to you? What's the real reason behind it?`,
+        parse_mode: 'Markdown',
+        reply_markup: this._persistentKeyboard()
+      };
+    }
+
+    if (draft.step === 'awaiting_why') {
+      const why = message.trim();
+      await this.assistant.updateProfileMeta(userId, {
+        goalDraft: { ...draft, step: 'awaiting_timeline', why }
+      });
+      return {
+        chat_id: chatId,
+        text: 'Got it. How long are you giving yourself?\n\nFor example: _"3 months"_, _"by December"_, _"6 months"_',
+        parse_mode: 'Markdown',
+        reply_markup: this._persistentKeyboard()
+      };
+    }
+
+    if (draft.step === 'awaiting_timeline') {
+      const timeline = message.trim();
+      const milestones = await this.assistant._generateMilestones(draft.title, draft.why, timeline);
+      await this.assistant.updateProfileMeta(userId, {
+        goalDraft: { ...draft, step: 'confirming_milestones', timeline, proposedMilestones: milestones }
+      });
+      const list = milestones.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
+      return {
+        chat_id: chatId,
+        text: `📍 *Here's a milestone plan for ${draft.title}:*\n\n${list}\n\nDoes this look right? Say *"yes"* to save, or tell me what to change.`,
+        parse_mode: 'Markdown',
+        reply_markup: this._persistentKeyboard()
+      };
+    }
+
+    if (draft.step === 'confirming_milestones') {
+      const confirmed = /^(yes|yep|yeah|looks good|perfect|great|ok|okay|sure|save|that('s| is) (good|right|perfect))/i.test(message.trim());
+      if (confirmed) {
+        const result = await this.assistant.createLongTermGoal(userId, {
+          title: draft.title,
+          why: draft.why,
+          timeline: draft.timeline,
+          milestones: draft.proposedMilestones
+        });
+        await this.assistant.updateProfileMeta(userId, { goalDraft: null });
+        return {
+          chat_id: chatId,
+          text: result.coachResponse,
+          parse_mode: 'Markdown',
+          reply_markup: this._persistentKeyboard()
+        };
+      }
+      // Revision requested
+      const updated = await this.assistant._reviseMilestones(draft.proposedMilestones, message);
+      await this.assistant.updateProfileMeta(userId, {
+        goalDraft: { ...draft, proposedMilestones: updated }
+      });
+      const list = updated.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
+      return {
+        chat_id: chatId,
+        text: `📍 *Updated plan:*\n\n${list}\n\nDoes this look right? Say *"yes"* to save.`,
+        parse_mode: 'Markdown',
+        reply_markup: this._persistentKeyboard()
+      };
+    }
+
+    // Unknown step — clear draft
+    await this.assistant.updateProfileMeta(userId, { goalDraft: null });
+    return this._formatTelegramResponse('Something went wrong with your goal draft. Let\'s start fresh — say "I want to..." to begin.', chatId);
   }
 
   async classifyIntent(message) {
