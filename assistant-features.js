@@ -592,16 +592,13 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
     if (/^(hi|hello|hey|yo|hola|sup|good morning|good afternoon|good evening|ok|okay|yes|sure|ready|yep|yeah|nope|nah|fine|thanks?)$/i.test(normalized.replace(/[^\w\s]/g, '').trim())) {
       return 'chat';
     }
-
-    // Fast-path: anything with "reminder", "remind me", or "recurring" is always a task
-    if (/\b(remind(er)?|recurring|every day|daily reminder|repeat)\b/i.test(normalized)) {
-      return 'task';
-    }
-
-    // Fast-path: streak queries
-    if (/\b(streak|how many days)\b/i.test(normalized)) {
-      return 'streak';
-    }
+    if (/\b(remind(er)?|recurring|every day|daily reminder|repeat)\b/i.test(normalized)) return 'task';
+    if (/\b(streak|how many days)\b/i.test(normalized)) return 'streak';
+    if (/\b(my stats|show stats|total tasks|how many tasks|tasks completed)\b/i.test(normalized)) return 'stats';
+    if (/\b(my settings|show settings|current settings|what time|when do you|my config)\b/i.test(normalized)) return 'settings';
+    if (/\b(peak hours|best time to work|optimal schedule|when should i work|most productive time)\b/i.test(normalized)) return 'peakhours';
+    if (/\b(personal insight|coach me|who am i|how do i work best|deep analysis)\b/i.test(normalized)) return 'insight';
+    if (/\b(reschedule|rename|change.*task|move.*task|update.*task|edit.*task)\b/i.test(normalized)) return 'edit';
 
     const systemPrompt = `Classify the user message into exactly one intent word from this list:
 task - adding a to-do, reminder, or chore ("buy milk", "remind me to call", "don't forget...", "set reminder", "recurring reminder")
@@ -614,13 +611,18 @@ motivation - asking for encouragement ("I'm stuck", "motivate me", "I'm procrast
 pattern - asking about work patterns ("how do I work", "show my patterns", "when am I most productive")
 abandoned - asking about forgotten goals ("what did I forget", "remind me abandoned goals")
 help - asking for available commands ("help", "what can you do", "commands")
-connect - linking or connecting a service account ("connect google", "link calendar", "sign in with google", "connect my calendar")
-question - any direct question OR request for information ("what is X?", "how do I...", "give me a recipe", "tell me about...", "explain...", "show me...")
-list - viewing saved tasks ("show my tasks", "what do I have today", "list tasks", "what's on my plate", "my to-do list")
-complete - marking a task as done ("done with X", "finished X", "mark X done", "completed the X task", "I did X")
+connect - linking or connecting a service account ("connect google", "link calendar", "sign in with google")
+question - any direct question OR request for information ("what is X?", "how do I...", "give me a recipe", "tell me about...", "explain...")
+list - viewing saved tasks ("show my tasks", "what do I have today", "list tasks", "what's on my plate")
+complete - marking a task as done ("done with X", "finished X", "mark X done", "completed the X task")
 delete - removing a task entirely ("remove X", "delete X task", "cancel X", "get rid of X")
+edit - editing a task ("reschedule X to Friday", "rename X to Y", "change deadline of X")
 streak - checking habit streak ("show my streak", "what's my streak", "streak status", "my streak")
-dailyconfig - setting preferred daily message time ("send my daily message at 7am", "daily message at 9", "change morning message to 6am")
+stats - viewing productivity statistics ("my stats", "show my stats", "how many tasks have I done")
+settings - viewing current configuration ("my settings", "what time is my morning brief", "show my config")
+peakhours - viewing optimal work schedule ("when should I work", "my peak hours", "best time to work")
+insight - requesting deep personal coaching ("coach me", "personal insight", "who am I as a creator")
+dailyconfig - setting message times ("send my daily message at 7am", "habit nudge at 9pm", "morning brief off")
 chat - anything else (casual talk, follow-ups that are not questions)
 
 Reply with ONLY the single intent word. No punctuation, no explanation.`;
@@ -628,7 +630,7 @@ Reply with ONLY the single intent word. No punctuation, no explanation.`;
     try {
       const result = await this._callOpenRouter(message, systemPrompt);
       const intent = (result || '').trim().toLowerCase().replace(/[^a-z]/g, '');
-      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','streak','dailyconfig','chat'];
+      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','edit','streak','stats','settings','peakhours','insight','dailyconfig','chat'];
       return valid.includes(intent) ? intent : 'chat';
     } catch {
       return 'chat';
@@ -719,10 +721,140 @@ RECURRING: [yes/no]`;
     if (tasks.length === 0) {
       return '✨ *No tasks yet!*\n─────────────────\nTry typing one of these to get started:\n\n• _"Call dentist Friday"_\n• _"Submit report by Monday"_\n• _"Buy groceries today"_\n\nOr just tell me what you need to do!';
     }
+    const priorityOrder = { high: 0, medium: 1, low: 2 };
+    const sorted = [...tasks].sort((a, b) =>
+      (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+    );
     const lines = ['📋 *Your tasks:*', '─────────────────'];
-    tasks.forEach((t, i) => lines.push(`${i + 1}. ${t.action} — _${t.deadline}_`));
-    lines.push('', '💡 Tap ✅ to complete, or say _"done with [task name]"_.');
+    sorted.forEach((t, i) => {
+      const prefix = t.priority === 'high' ? '⚡ ' : '';
+      lines.push(`${i + 1}. ${prefix}${t.action} — _${t.deadline}_`);
+    });
+    lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
     return lines.join('\n');
+  }
+
+  async getStats(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const allTasks = profile.allTasks || [];
+    const created = allTasks.length;
+    const completed = allTasks.filter(t => t.completed).length;
+    const pct = created > 0 ? Math.round((completed / created) * 100) : 0;
+    const energyLog = profile.energyLog || [];
+    const avgEnergy = energyLog.length > 0
+      ? (energyLog.slice(-30).reduce((s, e) => s + e.level, 0) / Math.min(energyLog.length, 30)).toFixed(1)
+      : null;
+    const history = Object.values(profile.commitmentHistory || {});
+    const longestStreak = history.reduce((best, _, i, arr) => {
+      let run = 0;
+      for (let j = i; j < arr.length && arr[j].success; j++) run++;
+      return Math.max(best, run);
+    }, 0);
+    const memberSince = profile.created
+      ? new Date(profile.created).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+      : 'unknown';
+
+    const lines = [
+      '📊 *Your Stats*',
+      '─────────────────',
+      `📌 Tasks created: ${created}`,
+      `✅ Tasks completed: ${completed}${created > 0 ? ` (${pct}%)` : ''}`,
+      `🔥 Current streak: ${profile.currentStreak || 0} day(s)`,
+      longestStreak > 0 ? `🏆 Longest streak: ${longestStreak} day(s)` : null,
+      avgEnergy ? `⚡ Avg energy (last 30): ${avgEnergy}/10` : null,
+      `📅 Member since: ${memberSince}`
+    ].filter(Boolean);
+    return lines.join('\n');
+  }
+
+  async showSettings(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const fmt = (h) => {
+      if (h === null || h === undefined) return 'off';
+      return h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`;
+    };
+    const habit = profile.dailyCommitment
+      ? `${this._formatHabit(profile.dailyCommitment)}`
+      : 'not set';
+    const morningHour = profile.morningBriefTime ?? profile.preferredHour ?? 8;
+    const lines = [
+      '⚙️ *Your Settings*',
+      '─────────────────',
+      `🔥 Daily habit: ${habit}`,
+      `🌍 Timezone: ${profile.timezone || 'not set — share location to fix'}`,
+      '',
+      '*Scheduled messages:*',
+      `☀️ Morning brief: ${fmt(morningHour)}`,
+      `🔔 Habit nudge: ${fmt(profile.habitNudgeTime ?? 20)}`,
+      `⚡ Energy check-in: ${fmt(profile.energyCheckTime ?? 21)}`,
+      `📊 Weekly review: Sundays at ${fmt(profile.weeklyReviewTime ?? 18)}`,
+      '',
+      '_Say "morning brief at 7am" or "habit nudge off" to change any time._'
+    ];
+    return lines.join('\n');
+  }
+
+  async editTask(userId, message) {
+    const profile = await this._getOrCreateProfile(userId);
+    const openTasks = (profile.allTasks || []).filter(t => !t.completed);
+    if (openTasks.length === 0) {
+      return "You don't have any open tasks to edit.";
+    }
+
+    const taskList = openTasks.map((t, i) => `${i + 1}. ${t.action}`).join('\n');
+    const systemPrompt = `The user wants to edit a task. Extract the edit details.
+
+Open tasks:
+${taskList}
+
+Reply in EXACTLY this format:
+TASK_NAME: [the task name from the list above, or closest match]
+EDIT_TYPE: reschedule | rename
+NEW_VALUE: [new deadline (e.g. "Fri, Jun 7") or new task name]
+
+Reply ONLY with these 3 lines. No other text.`;
+
+    const raw = await this._callOpenRouter(message, systemPrompt);
+    const taskNameMatch = raw.match(/TASK_NAME:\s*(.+)/i);
+    const editTypeMatch = raw.match(/EDIT_TYPE:\s*(reschedule|rename)/i);
+    const newValueMatch = raw.match(/NEW_VALUE:\s*(.+)/i);
+
+    if (!taskNameMatch || !editTypeMatch || !newValueMatch) {
+      return "I couldn't understand that edit. Try: _\"reschedule [task] to Friday\"_ or _\"rename [task] to [new name]\"_.";
+    }
+
+    const taskName = taskNameMatch[1].trim().toLowerCase();
+    const editType = editTypeMatch[1].trim().toLowerCase();
+    const newValue = newValueMatch[1].trim();
+
+    const task = openTasks.find(t =>
+      t.action.toLowerCase().includes(taskName) || taskName.includes(t.action.toLowerCase())
+    );
+    if (!task) {
+      return `I couldn't find a task matching "${taskName}". Tap 📋 *My Tasks* to see your list.`;
+    }
+
+    if (editType === 'reschedule') {
+      const userTimezone = profile.timezone || 'Asia/Singapore';
+      const parsed = chrono.parseDate(newValue, new Date(), { timezone: userTimezone });
+      task.deadline = parsed
+        ? parsed.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+        : newValue;
+      task.deadlineMs = parsed ? parsed.getTime() : null;
+      task.lastTouched = new Date().toISOString();
+      await this._saveProfile(userId, profile);
+      return `📅 *Updated!* "${task.action}" is now due _${task.deadline}_.`;
+    }
+
+    if (editType === 'rename') {
+      const oldName = task.action;
+      task.action = newValue;
+      task.lastTouched = new Date().toISOString();
+      await this._saveProfile(userId, profile);
+      return `✏️ *Renamed!* "${oldName}" → "${task.action}".`;
+    }
+
+    return "I couldn't apply that edit. Try: _\"reschedule [task] to Friday\"_.";
   }
 
   async completeTask(userId, message) {

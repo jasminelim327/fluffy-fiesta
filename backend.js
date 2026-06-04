@@ -46,16 +46,20 @@ async function registerBotCommands() {
   try {
     await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setMyCommands`, {
       commands: [
-        { command: 'start', description: 'Get started with a guided setup' },
-        { command: 'help', description: 'See everything I can do' },
-        { command: 'tasks', description: 'View your open tasks' },
-        { command: 'streak', description: 'Check your daily habit streak' },
-        { command: 'review', description: 'Get your weekly progress review' },
-        { command: 'patterns', description: 'Analyse your productivity patterns' },
-        { command: 'motivation', description: 'Get a boost when you need it' },
-        { command: 'energy', description: 'Log your energy level (1–10)' },
-        { command: 'goals', description: 'Revisit goals you have not touched' },
-        { command: 'connect', description: 'Link your Google Calendar' }
+        { command: 'start',     description: 'Get started with a guided setup' },
+        { command: 'help',      description: 'See everything I can do' },
+        { command: 'tasks',     description: 'View your open tasks' },
+        { command: 'streak',    description: 'Check your daily habit streak' },
+        { command: 'stats',     description: 'Your productivity stats at a glance' },
+        { command: 'review',    description: 'Get your weekly progress review' },
+        { command: 'patterns',  description: 'Analyse your productivity patterns' },
+        { command: 'insights',  description: 'Your peak work hours based on energy' },
+        { command: 'coach',     description: 'Deep personal AI coaching' },
+        { command: 'motivation',description: 'Get a boost when you need it' },
+        { command: 'energy',    description: 'Log your energy level (1–10)' },
+        { command: 'goals',     description: 'Revisit goals you have not touched' },
+        { command: 'settings',  description: 'View your current settings' },
+        { command: 'connect',   description: 'Link your Google Calendar' }
       ]
     });
     console.log('✅ Bot commands registered with Telegram');
@@ -69,15 +73,19 @@ function resolveSlashCommand(msg) {
   if (!entity) return null;
   const raw = msg.text.slice(1, entity.length).split('@')[0].toLowerCase();
   const commandMap = {
-    help: 'help',
-    tasks: 'list my tasks',
-    streak: 'show my streak',
-    review: 'weekly review',
-    patterns: 'show my patterns',
+    help:       'help',
+    tasks:      'list my tasks',
+    streak:     'show my streak',
+    stats:      'my stats',
+    review:     'weekly review',
+    patterns:   'show my patterns',
+    insights:   'my peak hours',
+    coach:      'personal insight',
     motivation: 'motivate me',
-    energy: 'energy',
-    goals: 'check abandoned goals',
-    connect: 'connect google'
+    energy:     'energy',
+    goals:      'check abandoned goals',
+    settings:   'my settings',
+    connect:    'connect google'
   };
   return { command: raw, text: commandMap[raw] || null };
 }

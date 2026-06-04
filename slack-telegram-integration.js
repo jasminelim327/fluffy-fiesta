@@ -239,16 +239,20 @@ class MessagingIntegration {
       case 'list': {
         const listText = await this.assistant.listTasks(userId);
         const openTasks = (profile.allTasks || []).filter(t => !t.completed);
-        if (openTasks.length > 0) {
+        const priorityOrder = { high: 0, medium: 1, low: 2 };
+        const sortedTasks = [...openTasks].sort((a, b) =>
+          (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+        );
+        if (sortedTasks.length > 0) {
           response = {
             chat_id: chatId,
             text: this._toTelegramMarkdown(listText),
             parse_mode: 'Markdown',
             reply_markup: {
-              inline_keyboard: openTasks.slice(0, 8).map(t => [{
-                text: `✅ ${t.action.slice(0, 40)}`,
-                callback_data: `done:${userId}:${t.id}`
-              }])
+              inline_keyboard: sortedTasks.slice(0, 6).map(t => [
+                { text: `✅ ${t.action.slice(0, 28)}`, callback_data: `done:${userId}:${t.id}` },
+                { text: '⏰ Snooze', callback_data: `snooze:${userId}:${t.id}` }
+              ])
             }
           };
         } else {
@@ -267,6 +271,26 @@ class MessagingIntegration {
 
       case 'delete':
         response = this._formatTelegramResponse(await this.assistant.deleteTask(userId, message), chatId);
+        break;
+
+      case 'edit':
+        response = this._formatTelegramResponse(await this.assistant.editTask(userId, message), chatId);
+        break;
+
+      case 'stats':
+        response = this._formatTelegramResponse(await this.assistant.getStats(userId), chatId);
+        break;
+
+      case 'settings':
+        response = this._formatTelegramResponse(await this.assistant.showSettings(userId), chatId);
+        break;
+
+      case 'peakhours':
+        response = this._formatTelegramResponse(await this.assistant.getOptimalWorkSchedule(userId), chatId);
+        break;
+
+      case 'insight':
+        response = this._formatTelegramResponse(await this.assistant.getPersonalInsight(userId), chatId);
         break;
 
       case 'streak':
@@ -426,35 +450,41 @@ class MessagingIntegration {
 ─────────────────
 📌 *Tasks & Reminders*
 • "Buy milk tomorrow"
-• "Call dentist on Friday at 3pm"
+• "Call dentist Friday at 3pm"
 • "Recurring reminder at 10am to drink water"
+• "Reschedule dentist to next Monday" _(edit a task)_
 
 🔥 *Daily Habits*
 • "15 min reading every day" _(set a habit)_
-• "I did 20 min" _(log progress)_
-• "Show my streak"
+• "30 pushups daily" _(non-time habits work too)_
+• "I did it" _(log progress)_
 
-❓ *Ask Me Anything*
-• "Give me a pasta recipe"
-• "How do I improve my sleep?"
-• "What are my tasks today?"
+💡 *Ideas*
+• "I have an idea for a side project…" _(I'll help you think it through)_
 
 📊 *Tracking & Insights*
-• "Energy 7" _(log your energy level 1–10)_
+• "Energy 7" _(log your energy 1–10)_
 • "Show my patterns"
 • "Give me a weekly review"
+• "My peak hours" _(best time to work based on your energy)_
+• "Personal insight" _(deep AI coaching on how you work)_
+• "My stats" _(tasks, streak, energy averages)_
 • "Remind me about forgotten goals"
 
-💪 *Motivation* — tap the button below or say "Motivate me"
+⚙️ *Settings*
+• "My settings" _(view habit, timezone, cron times)_
+• "Morning brief at 7am" · "Habit nudge off"
 
-📅 *Google Calendar* — /connect to link your calendar
+💪 *Motivation* — tap the button or say "Motivate me"
+📅 *Google Calendar* — /connect
 
 ─────────────────
 *Slash commands:*
-/tasks · /streak · /review · /patterns
-/motivation · /energy · /goals · /connect
+/tasks · /streak · /stats · /insights
+/review · /patterns · /motivation · /energy
+/goals · /settings · /coach · /connect
 
-Or just type naturally — the buttons below are shortcuts too!`
+Just type naturally — buttons below are shortcuts too!`
   }
 }
 
