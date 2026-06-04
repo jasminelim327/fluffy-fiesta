@@ -64,6 +64,24 @@ async function registerBotCommands() {
   }
 }
 
+function resolveSlashCommand(msg) {
+  const entity = (msg.entities || []).find(e => e.type === 'bot_command' && e.offset === 0);
+  if (!entity) return null;
+  const raw = msg.text.slice(1, entity.length).split('@')[0].toLowerCase();
+  const commandMap = {
+    help: 'help',
+    tasks: 'list my tasks',
+    streak: 'show my streak',
+    review: 'weekly review',
+    patterns: 'show my patterns',
+    motivation: 'motivate me',
+    energy: 'energy',
+    goals: 'check abandoned goals',
+    connect: 'connect google'
+  };
+  return { command: raw, text: commandMap[raw] || null };
+}
+
 // Startup checks: warn when critical env vars are missing
 if (!OPENROUTER_KEY) console.warn('⚠️ OPENROUTER_API_KEY not set. OpenRouter requests will fail.');
 if (!TELEGRAM_TOKEN) console.warn('⚠️ TELEGRAM_BOT_TOKEN not set — Telegram integration disabled.');
@@ -418,7 +436,6 @@ app.post('/telegram/webhook', async (req, res) => {
   }
 
   if (!msg.text) return;
-  const text = msg.text;
 
   try {
     await sendTelegramTyping(chatId);
@@ -427,6 +444,24 @@ app.post('/telegram/webhook', async (req, res) => {
       messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
         .catch(err => console.error('Profile meta update failed:', err.message));
 
+      // Handle slash commands
+      const slash = resolveSlashCommand(msg);
+      if (slash) {
+        if (slash.command === 'start') {
+          await messagingIntegration.handleStart(userId, chatId);
+          return;
+        }
+        if (slash.text) {
+          const formatted = await messagingIntegration.handleTelegramMessage(slash.text, userId, chatId);
+          await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
+            parse_mode: formatted.parse_mode,
+            reply_markup: formatted.reply_markup
+          });
+          return;
+        }
+      }
+
+      const text = msg.text;
       const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
       await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
         parse_mode: formatted.parse_mode,
@@ -530,12 +565,29 @@ async function telegramPolling() {
         }
 
         if (msg.text) {
-          const { text } = msg;
           try {
             await sendTelegramTyping(chatId);
             if (messagingIntegration) {
               messagingIntegration.assistant.updateProfileMeta(userId, { telegramChatId: chatId })
                 .catch(err => console.error('Profile meta update failed:', err.message));
+
+              const slash = resolveSlashCommand(msg);
+              if (slash) {
+                if (slash.command === 'start') {
+                  await messagingIntegration.handleStart(userId, chatId);
+                  continue;
+                }
+                if (slash.text) {
+                  const formatted = await messagingIntegration.handleTelegramMessage(slash.text, userId, chatId);
+                  await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
+                    parse_mode: formatted.parse_mode,
+                    reply_markup: formatted.reply_markup
+                  });
+                  continue;
+                }
+              }
+
+              const text = msg.text;
               const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
               await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
                 parse_mode: formatted.parse_mode,
