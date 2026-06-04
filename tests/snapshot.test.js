@@ -35,6 +35,30 @@ test('_buildDailySnapshot shows last energy level', () => {
   expect(snapshot).toContain('8/10');
 });
 
+test('_extractHabitFromMessage parses "15 min reading"', () => {
+  expect(assistant._extractHabitFromMessage('15 min reading')).toEqual({ minutes: 15, description: 'reading' });
+});
+
+test('_extractHabitFromMessage strips "of" from "15 min of reading"', () => {
+  expect(assistant._extractHabitFromMessage('15 min of reading')).toEqual({ minutes: 15, description: 'reading' });
+});
+
+test('_extractHabitFromMessage handles sentence form "I want to do 15 min of reading"', () => {
+  const result = assistant._extractHabitFromMessage('I want to do 15 min of reading');
+  expect(result.minutes).toBe(15);
+  expect(result.description).toBe('reading');
+});
+
+test('_extractHabitFromMessage handles non-time habit "30 pushups"', () => {
+  expect(assistant._extractHabitFromMessage('30 pushups')).toEqual({ minutes: 30, description: 'pushups' });
+});
+
+test('_extractHabitFromMessage handles pure description "meditation"', () => {
+  const result = assistant._extractHabitFromMessage('meditation');
+  expect(result.minutes).toBe(10);
+  expect(result.description).toBe('meditation');
+});
+
 test('_buildDailySnapshot counts tasks due in next 24h', () => {
   const profile = {
     allTasks: [

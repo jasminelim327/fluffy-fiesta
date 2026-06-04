@@ -447,7 +447,15 @@ EXPERIMENT: [one small behavior change to test]`;
 
   async getMotivatation(userId, flavor = 'default') {
     const profile = await this._getOrCreateProfile(userId);
-    
+
+    // Cycle through flavors so repeated taps feel fresh
+    if (flavor === 'default') {
+      const flavors = ['default', 'humorous', 'scientific', 'poetic', 'tough-love'];
+      const lastIdx = flavors.indexOf(profile.lastMotivationFlavor || 'tough-love');
+      flavor = flavors[(lastIdx + 1) % flavors.length];
+      await this.updateProfileMeta(userId, { lastMotivationFlavor: flavor });
+    }
+
     let systemPrompt;
 
     switch(flavor) {
@@ -664,10 +672,18 @@ RECURRING: [yes/no]`;
     if (!profile.allTasks) profile.allTasks = [];
     const userTimezone = profile.timezone || 'Asia/Singapore';
     const deadlineMs = this._parseDeadlineMs(taskData.deadline, userTimezone);
+    // Resolve natural-language deadline to a real date so it doesn't go stale
+    let resolvedDeadline = taskData.deadline || 'today';
+    try {
+      const parsed = chrono.parseDate(taskData.deadline, new Date(), { timezone: userTimezone });
+      if (parsed) {
+        resolvedDeadline = parsed.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      }
+    } catch { /* keep original */ }
     profile.allTasks.push({
       id: this._generateId(),
       action: taskData.action,
-      deadline: taskData.deadline || 'today',
+      deadline: resolvedDeadline,
       priority: taskData.priority || 'medium',
       recurring: taskData.recurring || false,
       completed: false,
@@ -846,28 +862,38 @@ RECURRING: [yes/no]`;
 
   async buildDailyMessage(userId) {
     const profile = await this._getOrCreateProfile(userId);
-    const lines = ['☀️ *Good morning!* Here\'s your daily summary:\n'];
-
-    const streak = profile.currentStreak || 0;
     const commitment = profile.dailyCommitment;
-    if (commitment) {
-      lines.push(`🔥 *Streak:* ${streak} day(s)`);
-      lines.push(`🎯 *Today\'s goal:* ${commitment.minutes}min of ${commitment.description}`);
-    }
-
-    const todayTasks = (profile.allTasks || []).filter(t => !t.completed && t.deadline === 'today');
-    if (todayTasks.length > 0) {
-      lines.push(`\n📌 *Due today:*`);
-      todayTasks.slice(0, 5).forEach(t => lines.push(`• ${t.action}`));
-    }
-
     const systemPrompt = `You are a warm, encouraging personal assistant sending a short morning message.
 Write ONE sentence of motivation relevant to someone working on: ${commitment?.description || 'their goals'}.
 Keep it under 20 words. No emojis. Just the sentence.`;
     const motivationLine = await this._callOpenRouter('morning motivation', systemPrompt);
-    lines.push(`\n💬 _${motivationLine.trim()}_`);
+    return `☀️ *Good morning!*\n\n${this._buildDailySnapshot(profile)}\n\n💬 _${motivationLine.trim()}_`;
+  }
 
-    return lines.join('\n');
+  _extractHabitFromMessage(message) {
+    const minMatch = message.match(/(\d+)\s*min/i);
+    if (minMatch) {
+      const minutes = parseInt(minMatch[1]);
+      const afterMin = message.replace(/.*?(\d+)\s*min(ute)?s?\s*/i, '').trim();
+      const desc = afterMin
+        .replace(/^(of|for|on|doing|to do)\s+/i, '')
+        .replace(/\b(daily|every day|everyday)\b/gi, '')
+        .trim() || 'daily practice';
+      return { minutes, description: desc };
+    }
+    const numDescMatch = message.match(/(\d+)\s+(.+)/);
+    if (numDescMatch) {
+      const desc = numDescMatch[2]
+        .replace(/\b(daily|every day|everyday)\b/gi, '')
+        .trim();
+      return { minutes: parseInt(numDescMatch[1]), description: desc || 'daily practice' };
+    }
+    // Pure description without number — e.g. "meditation"
+    const desc = message
+      .replace(/^(do|set|track|start|begin)\s+/i, '')
+      .replace(/\b(daily|every day|everyday)\b/gi, '')
+      .trim() || 'daily practice';
+    return { minutes: 10, description: desc };
   }
 
   // ============================================

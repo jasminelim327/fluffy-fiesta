@@ -86,6 +86,20 @@ function resolveSlashCommand(msg) {
 if (!OPENROUTER_KEY) console.warn('⚠️ OPENROUTER_API_KEY not set. OpenRouter requests will fail.');
 if (!TELEGRAM_TOKEN) console.warn('⚠️ TELEGRAM_BOT_TOKEN not set — Telegram integration disabled.');
 
+// Send a formatted response then, if it has followUpButtons, send them as a guaranteed second message
+async function sendFormattedResponse(messaging, chatId, formatted) {
+  await messaging.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
+    parse_mode: formatted.parse_mode,
+    reply_markup: formatted.reply_markup
+  });
+  if (formatted.followUpButtons) {
+    await messaging.sendToTelegram(chatId, '_What\'s next?_', {
+      parse_mode: 'Markdown',
+      reply_markup: { inline_keyboard: formatted.followUpButtons }
+    });
+  }
+}
+
 // ============================================
 // OPENROUTER INTEGRATION
 // ============================================
@@ -407,10 +421,7 @@ app.post('/telegram/webhook', async (req, res) => {
       if (SHORTCUT_MAP[target]) {
         try {
           const formatted = await messagingIntegration.handleTelegramMessage(SHORTCUT_MAP[target], cbUserId, cbChatId);
-          await messagingIntegration.sendToTelegram(formatted.chat_id || cbChatId, formatted.text, {
-            parse_mode: formatted.parse_mode,
-            reply_markup: formatted.reply_markup
-          });
+          await sendFormattedResponse(messagingIntegration, cbChatId, formatted);
         } catch (err) {
           console.error('Shortcut callback failed:', err.message);
         }
@@ -480,20 +491,14 @@ app.post('/telegram/webhook', async (req, res) => {
         }
         if (slash.text) {
           const formatted = await messagingIntegration.handleTelegramMessage(slash.text, userId, chatId);
-          await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
-            parse_mode: formatted.parse_mode,
-            reply_markup: formatted.reply_markup
-          });
+          await sendFormattedResponse(messagingIntegration, chatId, formatted);
           return;
         }
       }
 
       const text = msg.text;
       const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
-      await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
-        parse_mode: formatted.parse_mode,
-        reply_markup: formatted.reply_markup
-      });
+      await sendFormattedResponse(messagingIntegration, chatId, formatted);
     } else {
       const actionData = await processMessage(text);
       const message = actionData.clarification
@@ -633,20 +638,14 @@ async function telegramPolling() {
                 }
                 if (slash.text) {
                   const formatted = await messagingIntegration.handleTelegramMessage(slash.text, userId, chatId);
-                  await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
-                    parse_mode: formatted.parse_mode,
-                    reply_markup: formatted.reply_markup
-                  });
+                  await sendFormattedResponse(messagingIntegration, chatId, formatted);
                   continue;
                 }
               }
 
               const text = msg.text;
               const formatted = await messagingIntegration.handleTelegramMessage(text, userId, chatId);
-              await messagingIntegration.sendToTelegram(formatted.chat_id || chatId, formatted.text, {
-                parse_mode: formatted.parse_mode,
-                reply_markup: formatted.reply_markup
-              });
+              await sendFormattedResponse(messagingIntegration, chatId, formatted);
             } else {
               const actionData = await processMessage(text);
               const message = actionData.clarification

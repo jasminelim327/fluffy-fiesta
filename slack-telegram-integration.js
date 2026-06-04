@@ -41,10 +41,9 @@ class MessagingIntegration {
     return map[text] || null;
   }
 
-  _sendContextualButtons(chatId, userId, buttons) {
-    this.sendToTelegram(chatId, '👆', {
-      reply_markup: { inline_keyboard: buttons }
-    }).catch(err => console.error('Contextual button send failed:', err.message));
+  _maybeAddTimezonePrompt(profile) {
+    if (profile.timezone || profile.askedTimezone) return null;
+    return '\n\n📍 _Tip: share your location so I can send reminders at the right time for you. Tap the 📎 icon → Location._';
   }
 
   async _appendDailySnapshot(response, userId) {
@@ -122,12 +121,16 @@ class MessagingIntegration {
           timeZone: profile.timezone || 'UTC'
         }).format(new Date());
         const habitLoggedToday = profile.commitmentHistory?.[todayKey]?.success;
+        let taskText = msg;
         if (profile.dailyCommitment && !habitLoggedToday) {
-          const nudge = `\n\n💬 _Don't forget your ${profile.dailyCommitment.minutes}min ${profile.dailyCommitment.description} today — you're on a ${profile.currentStreak || 0}-day streak!_`;
-          response = { chat_id: chatId, text: msg + nudge, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
-        } else {
-          response = { chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+          taskText += `\n\n💬 _Don't forget your ${profile.dailyCommitment.minutes}min ${profile.dailyCommitment.description} today — you're on a ${profile.currentStreak || 0}-day streak!_`;
         }
+        const tzPrompt = this._maybeAddTimezonePrompt(profile);
+        if (tzPrompt) {
+          taskText += tzPrompt;
+          this.assistant.updateProfileMeta(userId, { askedTimezone: true }).catch(() => {});
+        }
+        response = { chat_id: chatId, text: taskText, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
         break;
       }
 
@@ -137,9 +140,8 @@ class MessagingIntegration {
 
       case 'commit': {
         const minMatch = message.match(/(\d+)\s*min/i);
-        if (minMatch) {
-          const minutes = parseInt(minMatch[1]);
-          const desc = message.replace(/\d+\s*min(ute)?s?/i, '').trim() || 'daily practice';
+        if (minMatch || /set|track|commit|habit|daily/i.test(message)) {
+          const { minutes, description: desc } = this.assistant._extractHabitFromMessage(message);
           const commitResponse = await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
           if (this.calendarSync && commitResponse.commitment) {
             this.calendarSync.addRecurringEvent({
@@ -173,10 +175,10 @@ class MessagingIntegration {
           );
           const energyLevel = parseInt(numMatch[1]);
           if (energyLevel <= 4) {
-            this._sendContextualButtons(chatId, userId, [[
+            response.followUpButtons = [[
               { text: '💪 Motivate Me', callback_data: `shortcut:${userId}:motivation` },
               { text: '📋 My Tasks', callback_data: `shortcut:${userId}:list` }
-            ]]);
+            ]];
           }
           break;
         }
@@ -191,10 +193,10 @@ class MessagingIntegration {
 
       case 'review':
         response = this._formatTelegramResponse(await this.assistant.generateWeeklyReview(userId), chatId);
-        this._sendContextualButtons(chatId, userId, [[
+        response.followUpButtons = [[
           { text: '📊 See Patterns', callback_data: `shortcut:${userId}:patterns` },
           { text: '🎯 Revisit Goals', callback_data: `shortcut:${userId}:goals` }
-        ]]);
+        ]];
         break;
 
       case 'motivation':
@@ -232,16 +234,33 @@ class MessagingIntegration {
         response = this._formatTelegramResponse(await this.assistant.answerQuestion(message, userId), chatId);
         break;
 
-      case 'list':
-        response = this._formatTelegramResponse(await this.assistant.listTasks(userId), chatId);
+      case 'list': {
+        const listText = await this.assistant.listTasks(userId);
+        const openTasks = (profile.allTasks || []).filter(t => !t.completed);
+        if (openTasks.length > 0) {
+          response = {
+            chat_id: chatId,
+            text: this._toTelegramMarkdown(listText),
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: openTasks.slice(0, 8).map(t => [{
+                text: `✅ ${t.action.slice(0, 40)}`,
+                callback_data: `done:${userId}:${t.id}`
+              }])
+            }
+          };
+        } else {
+          response = this._formatTelegramResponse(listText, chatId);
+        }
         break;
+      }
 
       case 'complete':
         response = this._formatTelegramResponse(await this.assistant.completeTask(userId, message), chatId);
-        this._sendContextualButtons(chatId, userId, [[
+        response.followUpButtons = [[
           { text: '📋 Remaining Tasks', callback_data: `shortcut:${userId}:list` },
           { text: '🔥 My Streak', callback_data: `shortcut:${userId}:streak` }
-        ]]);
+        ]];
         break;
 
       case 'delete':
@@ -310,24 +329,15 @@ class MessagingIntegration {
   }
 
   async _handleOnboardingReply(message, userId, chatId) {
-    const minMatch = message.match(/(\d+)\s*min/i);
-    if (minMatch) {
-      const minutes = parseInt(minMatch[1]);
-      const desc = message.replace(/\d+\s*min(ute)?s?/i, '').trim() || 'daily practice';
-      await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
-      await this.assistant.updateProfileMeta(userId, { onboardingStep: 'none' });
-      return {
-        chat_id: chatId,
-        text: `🔥 *Done! I'll track your ${minutes}min ${desc} streak every day.*\n\nYou're all set. Just type naturally — or use the buttons below.\nType /help anytime to see what I can do.`,
-        parse_mode: 'Markdown',
-        reply_markup: this._persistentKeyboard()
-      };
-    }
-    // Couldn't parse — re-prompt once
+    const { minutes, description } = this.assistant._extractHabitFromMessage(message);
+    await this.assistant.setDailyCommitment(userId, { minutes, description });
+    await this.assistant.updateProfileMeta(userId, { onboardingStep: 'none' });
+    const habitDisplay = minutes === 10 && !message.match(/10/) ? description : `${minutes}min ${description}`;
     return {
       chat_id: chatId,
-      text: 'Hmm, I need something like _"15 min reading"_ or _"30 min workout"_. What\'s your daily habit?',
-      parse_mode: 'Markdown'
+      text: `🔥 *Done! I'll track your ${habitDisplay} streak every day.*\n\nYou're all set. Just type naturally — or use the buttons below.\nType /help anytime to see what I can do.`,
+      parse_mode: 'Markdown',
+      reply_markup: this._persistentKeyboard()
     };
   }
 
@@ -418,8 +428,8 @@ class MessagingIntegration {
 • "Recurring reminder at 10am to drink water"
 
 🔥 *Daily Habits*
-• "Set a daily commitment to 15 min reading"
-• "I completed 20 min" _(log progress)_
+• "15 min reading every day" _(set a habit)_
+• "I did 20 min" _(log progress)_
 • "Show my streak"
 
 ❓ *Ask Me Anything*
@@ -433,14 +443,16 @@ class MessagingIntegration {
 • "Give me a weekly review"
 • "Remind me about forgotten goals"
 
-💪 *Motivation*
-• "Motivate me"
+💪 *Motivation* — tap the button below or say "Motivate me"
 
-📅 *Google Calendar*
-• "Connect Google" _(link your calendar)_
+📅 *Google Calendar* — /connect to link your calendar
 
 ─────────────────
-Just type naturally — no commands needed!`
+*Slash commands:*
+/tasks · /streak · /review · /patterns
+/motivation · /energy · /goals · /connect
+
+Or just type naturally — the buttons below are shortcuts too!`
   }
 }
 
