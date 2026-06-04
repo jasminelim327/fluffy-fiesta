@@ -59,6 +59,7 @@ async function registerBotCommands() {
         { command: 'energy',    description: 'Log your energy level (1–10)' },
         { command: 'goals',     description: 'Revisit goals you have not touched' },
         { command: 'settings',  description: 'View your current settings' },
+        { command: 'longterm',  description: 'Set or view your long-term goals' },
         { command: 'connect',   description: 'Link your Google Calendar' }
       ]
     });
@@ -85,6 +86,7 @@ function resolveSlashCommand(msg) {
     energy:     'energy',
     goals:      'check abandoned goals',
     settings:   'my settings',
+    longterm:   'my long-term goals',
     connect:    'connect google'
   };
   return { command: raw, text: commandMap[raw] || null };
@@ -461,6 +463,57 @@ app.post('/telegram/webhook', async (req, res) => {
       } catch (err) {
         console.error('habit_skip callback failed:', err.message);
       }
+    } else if (action === 'goal_view' && messagingIntegration) {
+      const cbUserId = parts[1];
+      const goalId = parts[2];
+      try {
+        const profile = await db.getUserProfile(cbUserId);
+        if (!profile) return;
+        const detail = messagingIntegration.assistant.getLongTermGoalDetail(profile, goalId);
+        if (!detail) return;
+        const { goal, text } = detail;
+        const inlineButtons = (goal.milestonesProgress || [])
+          .map((m, i) => !m.completed ? [{
+            text: `✅ ${m.name.slice(0, 35)}`,
+            callback_data: `milestone_done:${cbUserId}:${goalId}:${i}`
+          }] : null)
+          .filter(Boolean);
+        await messagingIntegration.sendToTelegram(cbChatId, text, {
+          parse_mode: 'Markdown',
+          reply_markup: inlineButtons.length > 0 ? { inline_keyboard: inlineButtons } : undefined
+        });
+      } catch (err) {
+        console.error('goal_view callback failed:', err.message);
+      }
+    } else if (action === 'milestone_done' && messagingIntegration) {
+      const cbUserId = parts[1];
+      const goalId = parts[2];
+      const milestoneIndex = parseInt(parts[3]);
+      try {
+        const result = await messagingIntegration.assistant.progressMilestone(cbUserId, goalId, milestoneIndex);
+        const text = typeof result === 'object' ? result.message : result;
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+          chat_id: cbChatId,
+          message_id: cbMessageId,
+          text,
+          parse_mode: 'Markdown'
+        });
+      } catch (err) {
+        console.error('milestone_done callback failed:', err.message);
+      }
+    } else if (action === 'longterm_new' && messagingIntegration) {
+      const cbUserId = parts[1];
+      try {
+        await messagingIntegration.assistant.updateProfileMeta(cbUserId, {
+          goalDraft: { step: 'awaiting_title', title: null, why: null, timeline: null, proposedMilestones: [] }
+        });
+        await messagingIntegration.sendToTelegram(cbChatId,
+          '🎯 *Let\'s set a new big goal.*\n\nWhat\'s the goal?',
+          { parse_mode: 'Markdown' }
+        );
+      } catch (err) {
+        console.error('longterm_new callback failed:', err.message);
+      }
     }
     return;
   }
@@ -611,6 +664,57 @@ async function telegramPolling() {
               });
             } catch (err) {
               console.error('habit_skip callback failed:', err.message);
+            }
+          } else if (action === 'goal_view' && messagingIntegration) {
+            const cbUserId = parts[1];
+            const goalId = parts[2];
+            try {
+              const profile = await db.getUserProfile(cbUserId);
+              if (!profile) continue;
+              const detail = messagingIntegration.assistant.getLongTermGoalDetail(profile, goalId);
+              if (!detail) continue;
+              const { goal, text } = detail;
+              const inlineButtons = (goal.milestonesProgress || [])
+                .map((m, i) => !m.completed ? [{
+                  text: `✅ ${m.name.slice(0, 35)}`,
+                  callback_data: `milestone_done:${cbUserId}:${goalId}:${i}`
+                }] : null)
+                .filter(Boolean);
+              await messagingIntegration.sendToTelegram(cbChatId, text, {
+                parse_mode: 'Markdown',
+                reply_markup: inlineButtons.length > 0 ? { inline_keyboard: inlineButtons } : undefined
+              });
+            } catch (err) {
+              console.error('goal_view callback failed:', err.message);
+            }
+          } else if (action === 'milestone_done' && messagingIntegration) {
+            const cbUserId = parts[1];
+            const goalId = parts[2];
+            const milestoneIndex = parseInt(parts[3]);
+            try {
+              const result = await messagingIntegration.assistant.progressMilestone(cbUserId, goalId, milestoneIndex);
+              const text = typeof result === 'object' ? result.message : result;
+              await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+                chat_id: cbChatId,
+                message_id: cbMessageId,
+                text,
+                parse_mode: 'Markdown'
+              });
+            } catch (err) {
+              console.error('milestone_done callback failed:', err.message);
+            }
+          } else if (action === 'longterm_new' && messagingIntegration) {
+            const cbUserId = parts[1];
+            try {
+              await messagingIntegration.assistant.updateProfileMeta(cbUserId, {
+                goalDraft: { step: 'awaiting_title', title: null, why: null, timeline: null, proposedMilestones: [] }
+              });
+              await messagingIntegration.sendToTelegram(cbChatId,
+                '🎯 *Let\'s set a new big goal.*\n\nWhat\'s the goal?',
+                { parse_mode: 'Markdown' }
+              );
+            } catch (err) {
+              console.error('longterm_new callback failed:', err.message);
             }
           }
           continue;
