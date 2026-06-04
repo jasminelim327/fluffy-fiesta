@@ -960,6 +960,30 @@ Keep it under 20 words. No emojis. Just the sentence.`;
     return `${streak} days! 🏆 You're a legend!`;
   }
 
+  _buildDailySnapshot(profile) {
+    const now = Date.now();
+    const in24h = now + 24 * 60 * 60 * 1000;
+    const tasksDue = (profile.allTasks || []).filter(t => {
+      if (t.completed) return false;
+      if (t.deadlineMs) return t.deadlineMs >= now && t.deadlineMs < in24h;
+      return t.deadline === 'today';
+    });
+    const tasksLine = tasksDue.length > 0
+      ? `• 📌 ${tasksDue.length} task(s) due today`
+      : '• No tasks due today';
+
+    const streakLine = profile.dailyCommitment
+      ? `• 🔥 Streak: ${profile.currentStreak || 0} day(s) (${profile.dailyCommitment.description})`
+      : '• No habit set yet';
+
+    const lastEnergy = (profile.energyLog || []).slice(-1)[0] || null;
+    const energyLine = lastEnergy
+      ? `• ⚡ Last energy: ${lastEnergy.level}/10`
+      : '• ⚡ Energy not logged yet';
+
+    return ['─────────────────', '📅 *Today\'s snapshot*', tasksLine, streakLine, energyLine].join('\n');
+  }
+
   _daysAgo(date) {
     const days = Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
     return days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
