@@ -1099,6 +1099,40 @@ Keep it under 20 words. No emojis. Just the sentence.`;
     return { bar, pct, done, total, next };
   }
 
+  async listLongTermGoals(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const goals = (profile.longTermGoals || []).filter(g => g.status === 'active');
+    if (goals.length === 0) {
+      return 'No long-term goals yet.\n\nSay something like _"I want to build a SaaS product"_ to set one.';
+    }
+    const lines = ['🎯 *Your Long-term Goals*', '─────────────────'];
+    goals.forEach((g, i) => {
+      const { bar, pct, done, total, next } = this._goalProgressBar(g.milestonesProgress || []);
+      lines.push(`\n${i + 1}. *${g.title}* _(${g.timeline})_`);
+      lines.push(`   ${bar} ${pct}% · ${done}/${total} milestones`);
+      lines.push(`   Next: ${next}`);
+    });
+    return lines.join('\n');
+  }
+
+  getLongTermGoalDetail(profile, goalId) {
+    const goal = (profile.longTermGoals || []).find(g => g.id === goalId);
+    if (!goal) return null;
+    const { pct } = this._goalProgressBar(goal.milestonesProgress || []);
+    const lines = [
+      `🎯 *${goal.title}*`,
+      `Timeline: ${goal.timeline} · ${pct}% complete`,
+      '─────────────────'
+    ];
+    (goal.milestonesProgress || []).forEach(m => {
+      const dateStr = m.completed && m.completedDate
+        ? ` _(${new Date(m.completedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})_`
+        : '';
+      lines.push(`${m.completed ? '✅' : '⬜'} ${m.name}${dateStr}`);
+    });
+    return { goal, text: lines.join('\n') };
+  }
+
   // ============================================
   // UPCOMING REMINDERS - Tasks due soon
   // ============================================
