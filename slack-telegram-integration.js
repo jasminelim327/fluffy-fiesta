@@ -312,6 +312,42 @@ class MessagingIntegration {
         response = this._formatTelegramResponse(await this.assistant.getPersonalInsight(userId), chatId);
         break;
 
+      case 'longterm': {
+        const goals = (profile.longTermGoals || []).filter(g => g.status === 'active');
+        if (goals.length === 0) {
+          // No goals — start creation flow
+          await this.assistant.updateProfileMeta(userId, {
+            goalDraft: { step: 'awaiting_title', title: null, why: null, timeline: null, proposedMilestones: [] }
+          });
+          response = {
+            chat_id: chatId,
+            text: '🎯 *Let\'s set a big goal.*\n\nWhat\'s the goal? Just the name — keep it short.\n\nFor example:\n• "Build a SaaS product"\n• "Run a marathon"\n• "Write a book"',
+            parse_mode: 'Markdown',
+            reply_markup: this._persistentKeyboard()
+          };
+        } else {
+          const listText = await this.assistant.listLongTermGoals(userId);
+          const buttons = goals.map(g => [{
+            text: `📍 ${g.title.slice(0, 35)}`,
+            callback_data: `goal_view:${userId}:${g.id}`
+          }]);
+          buttons.push([{ text: '➕ Add new goal', callback_data: `longterm_new:${userId}` }]);
+          response = {
+            chat_id: chatId,
+            text: this._toTelegramMarkdown(listText),
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: buttons }
+          };
+        }
+        break;
+      }
+
+      case 'milestonedone':
+        response = this._formatTelegramResponse(
+          await this.assistant.markMilestoneByText(userId, message), chatId
+        );
+        break;
+
       case 'streak':
         response = this._formatTelegramResponse(await this.assistant.formatStreakMessage(userId), chatId);
         break;
