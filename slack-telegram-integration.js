@@ -50,7 +50,8 @@ class MessagingIntegration {
       );
     }
 
-    const intent = await this.assistant.classifyIntent(message);
+    const shortcutIntent = this._resolveKeyboardShortcut(message);
+    const intent = shortcutIntent || await this.assistant.classifyIntent(message);
     console.log(`Intent classified as "${intent}" for message:`, message);
 
     switch (intent) {
@@ -69,7 +70,7 @@ class MessagingIntegration {
           );
         }
         if (!taskData.action) {
-          return { chat_id: chatId, text: 'I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".', parse_mode: 'Markdown' };
+          return { chat_id: chatId, text: 'I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".', parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
         }
         const recurringLine = taskData.recurring ? '🔁 Recurring daily (30 days)' : null;
         const msg = [
@@ -81,7 +82,7 @@ class MessagingIntegration {
           '',
           `💬 _${taskData.motivation}_`
         ].filter(line => line !== null).join('\n');
-        return { chat_id: chatId, text: msg, parse_mode: 'Markdown' };
+        return { chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
       }
 
       case 'idea':
@@ -152,7 +153,7 @@ class MessagingIntegration {
             };
           }
         }
-        return { chat_id: chatId, text: 'Google Calendar connection is not configured on this server.', parse_mode: 'Markdown' };
+        return { chat_id: chatId, text: 'Google Calendar connection is not configured on this server.', parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
       }
 
       case 'question':
@@ -225,7 +226,8 @@ class MessagingIntegration {
     return {
       chat_id: chatId,
       text: this._toTelegramMarkdown(text),
-      parse_mode: 'Markdown'
+      parse_mode: 'Markdown',
+      reply_markup: this._persistentKeyboard()
     };
   }
 
