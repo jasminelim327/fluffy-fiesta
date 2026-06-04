@@ -7,7 +7,7 @@
     "start": "node backend.js",
     "dev": "nodemon backend.js",
     "google-auth": "node scripts/google-auth.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "keywords": [
     "assistant",
@@ -30,6 +30,7 @@
     "pg": "^8.21.0"
   },
   "devDependencies": {
+    "jest": "^30.4.2",
     "nodemon": "^3.0.1"
   }
 }
