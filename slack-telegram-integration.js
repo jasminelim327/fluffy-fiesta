@@ -60,6 +60,12 @@ class MessagingIntegration {
   // ============================================
 
   async handleTelegramMessage(message, userId, chatId) {
+    // Handle onboarding habit capture
+    const profile = await this.assistant._getOrCreateProfile(userId);
+    if (profile.onboardingStep === 'awaiting_habit') {
+      return this._handleOnboardingReply(message, userId, chatId);
+    }
+
     const welcome = await this.assistant.getWelcomeIfNew(userId);
     if (welcome) {
       await this.sendToTelegram(chatId, welcome).catch(err =>
@@ -262,6 +268,28 @@ class MessagingIntegration {
     );
 
     await this.assistant.updateProfileMeta(userId, { welcomed: true, onboardingStep: 'awaiting_habit' });
+  }
+
+  async _handleOnboardingReply(message, userId, chatId) {
+    const minMatch = message.match(/(\d+)\s*min/i);
+    if (minMatch) {
+      const minutes = parseInt(minMatch[1]);
+      const desc = message.replace(/\d+\s*min(ute)?s?/i, '').trim() || 'daily practice';
+      await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
+      await this.assistant.updateProfileMeta(userId, { onboardingStep: 'none' });
+      return {
+        chat_id: chatId,
+        text: `🔥 *Done! I'll track your ${minutes}min ${desc} streak every day.*\n\nYou're all set. Just type naturally — or use the buttons below.\nType /help anytime to see what I can do.`,
+        parse_mode: 'Markdown',
+        reply_markup: this._persistentKeyboard()
+      };
+    }
+    // Couldn't parse — re-prompt once
+    return {
+      chat_id: chatId,
+      text: 'Hmm, I need something like _"15 min reading"_ or _"30 min workout"_. What\'s your daily habit?',
+      parse_mode: 'Markdown'
+    };
   }
 
   async classifyIntent(message) {
