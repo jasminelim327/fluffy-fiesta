@@ -37,6 +37,33 @@ const SHORTCUT_MAP = {
   goals: 'check abandoned goals'
 };
 
+// ============================================
+// BOT COMMAND REGISTRATION
+// ============================================
+
+async function registerBotCommands() {
+  if (!TELEGRAM_TOKEN) return;
+  try {
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/setMyCommands`, {
+      commands: [
+        { command: 'start', description: 'Get started with a guided setup' },
+        { command: 'help', description: 'See everything I can do' },
+        { command: 'tasks', description: 'View your open tasks' },
+        { command: 'streak', description: 'Check your daily habit streak' },
+        { command: 'review', description: 'Get your weekly progress review' },
+        { command: 'patterns', description: 'Analyse your productivity patterns' },
+        { command: 'motivation', description: 'Get a boost when you need it' },
+        { command: 'energy', description: 'Log your energy level (1–10)' },
+        { command: 'goals', description: 'Revisit goals you have not touched' },
+        { command: 'connect', description: 'Link your Google Calendar' }
+      ]
+    });
+    console.log('✅ Bot commands registered with Telegram');
+  } catch (err) {
+    console.warn('⚠️ setMyCommands failed (non-fatal):', err.response?.data?.description || err.message);
+  }
+}
+
 // Startup checks: warn when critical env vars are missing
 if (!OPENROUTER_KEY) console.warn('⚠️ OPENROUTER_API_KEY not set. OpenRouter requests will fail.');
 if (!TELEGRAM_TOKEN) console.warn('⚠️ TELEGRAM_BOT_TOKEN not set — Telegram integration disabled.');
@@ -784,9 +811,12 @@ async function syncTask(actionData, userId) {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, async () => {
   console.log(`🤖 Assistant running on port ${PORT}`);
-  
+
   // Initialize integrations
   await initializeIntegrations();
+
+  // Register bot commands with Telegram
+  await registerBotCommands();
 
   // Initialize persistence layer
   await db.initializeDatabase().catch(err =>
