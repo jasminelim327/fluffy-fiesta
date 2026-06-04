@@ -199,7 +199,7 @@ ${profileSummary}`;
       return daysSinceTouch > 7;
     });
 
-    if (abandoned.length === 0) return [];
+    if (abandoned.length === 0) return '🎯 *No forgotten goals!*\n\nYou\'re on top of everything — great work.\nWant to add a new goal? Just type what you want to achieve.';
 
     // Generate personalized reminders
     const reminders = await Promise.all(
@@ -244,6 +244,10 @@ SMALL_RESTART: [one tiny action to get momentum back]`;
     */
     const profile = await this._getOrCreateProfile(userId);
     const weekStats = this._calculateWeekStats(profile);
+
+    if (weekStats.attempts < 3) {
+      return 'Not enough data for a full review yet 📊\n\nKeep logging for a few days — I need at least 3 days of data to spot patterns.\n\nWant to set a daily habit to track? Try _"Set 15 min reading every day"_.';
+    }
 
     const systemPrompt = `You are a thoughtful friend doing a weekly check-in.
 Analyze their week with warmth. Celebrate wins, identify patterns, encourage next week.
@@ -679,7 +683,7 @@ RECURRING: [yes/no]`;
     const profile = await this._getOrCreateProfile(userId);
     const tasks = (profile.allTasks || []).filter(t => !t.completed);
     if (tasks.length === 0) {
-      return '✨ *No tasks yet!*\nTell me something like "Buy milk tomorrow" to add one.';
+      return '✨ *No tasks yet!*\n─────────────────\nTry typing one of these to get started:\n\n• _"Call dentist Friday"_\n• _"Submit report by Monday"_\n• _"Buy groceries today"_\n\nOr just tell me what you need to do!';
     }
     const lines = ['📋 *Your tasks:*', '─────────────────'];
     tasks.forEach((t, i) => lines.push(`${i + 1}. ${t.action} — _${t.deadline}_`));
@@ -740,7 +744,7 @@ RECURRING: [yes/no]`;
   async formatStreakMessage(userId) {
     const s = await this.getStreakStatus(userId);
     if (!s.dailyCommitment) {
-      return 'No daily commitment set yet.\nSay *"set a daily commitment to 15 min reading"* to start one!';
+      return 'No daily habit set yet 🌱\n─────────────────\nTell me what you want to do every day, for example:\n\n• _"Set 15 min reading every day"_\n• _"30 min workout daily"_\n\nI\'ll track your streak automatically.';
     }
     const todayLine = s.todayComplete ? '✅ Today: completed' : '⏳ Today: not yet';
     return [

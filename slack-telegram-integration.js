@@ -180,7 +180,12 @@ class MessagingIntegration {
           }
           break;
         }
-        response = this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        response = {
+          chat_id: chatId,
+          text: '⚡ How\'s your energy today?\n\nReply with a number: *1* (exhausted) → *10* (on fire)',
+          parse_mode: 'Markdown',
+          reply_markup: this._persistentKeyboard()
+        };
         break;
       }
 
