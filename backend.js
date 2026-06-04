@@ -415,6 +415,33 @@ app.post('/telegram/webhook', async (req, res) => {
           console.error('Shortcut callback failed:', err.message);
         }
       }
+    } else if (action === 'habit_done' && messagingIntegration) {
+      const cbUserId = parts[1];
+      try {
+        const profile = await db.getUserProfile(cbUserId);
+        if (profile?.dailyCommitment) {
+          await messagingIntegration.assistant.logDailyCommitment(cbUserId, profile.dailyCommitment.minutes);
+        }
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+          chat_id: cbChatId,
+          message_id: cbMessageId,
+          text: '✅ *Habit logged!* Great work — keep that streak going! 🔥',
+          parse_mode: 'Markdown'
+        });
+      } catch (err) {
+        console.error('habit_done callback failed:', err.message);
+      }
+    } else if (action === 'habit_skip') {
+      try {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+          chat_id: cbChatId,
+          message_id: cbMessageId,
+          text: '⏭ Skipped today — that\'s okay. Tomorrow, fresh start.',
+          parse_mode: 'Markdown'
+        });
+      } catch (err) {
+        console.error('habit_skip callback failed:', err.message);
+      }
     }
     return;
   }
@@ -544,6 +571,33 @@ async function telegramPolling() {
               } catch (err) {
                 console.error('Shortcut callback failed:', err.message);
               }
+            }
+          } else if (action === 'habit_done' && messagingIntegration) {
+            const cbUserId = parts[1];
+            try {
+              const profile = await db.getUserProfile(cbUserId);
+              if (profile?.dailyCommitment) {
+                await messagingIntegration.assistant.logDailyCommitment(cbUserId, profile.dailyCommitment.minutes);
+              }
+              await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+                chat_id: cbChatId,
+                message_id: cbMessageId,
+                text: '✅ *Habit logged!* Great work — keep that streak going! 🔥',
+                parse_mode: 'Markdown'
+              });
+            } catch (err) {
+              console.error('habit_done callback failed:', err.message);
+            }
+          } else if (action === 'habit_skip') {
+            try {
+              await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+                chat_id: cbChatId,
+                message_id: cbMessageId,
+                text: '⏭ Skipped today — that\'s okay. Tomorrow, fresh start.',
+                parse_mode: 'Markdown'
+              });
+            } catch (err) {
+              console.error('habit_skip callback failed:', err.message);
             }
           }
           continue;
@@ -890,29 +944,96 @@ app.listen(PORT, async () => {
     console.warn('Could not initialize MessagingIntegration:', err.message || err);
   }
   
-  // Daily morning message — runs every hour, fires for each user at their preferred local hour
+  // Hourly cron — morning brief, habit nudge, energy check-in, weekly review
   cron.schedule('0 * * * *', async () => {
     if (!messagingIntegration || !TELEGRAM_TOKEN) return;
     const users = await db.getAllUsersWithTelegram().catch(() => []);
+    const now = new Date();
+
     for (const user of users) {
+      if (!user.telegramChatId) continue;
       try {
         const tz = user.timezone || process.env.DAILY_MESSAGE_TIMEZONE || 'Asia/Singapore';
-        const localHour = parseInt(new Date().toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }));
-        const preferredHour = user.preferredHour !== undefined ? user.preferredHour : 8;
-        if (localHour !== preferredHour) continue;
-        console.log(`📅 Sending daily message to user ${user.userId} (${tz}, hour ${localHour})`);
-        const text = await messagingIntegration.assistant.buildDailyMessage(user.userId);
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
-          chat_id: user.telegramChatId,
-          text,
-          parse_mode: 'Markdown'
-        });
+        const localHour = parseInt(now.toLocaleString('en-US', { timeZone: tz, hour: 'numeric', hour12: false }));
+        const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+
+        // ── Morning briefing ──────────────────────────────────────────────────
+        const morningHour = user.morningBriefTime !== undefined ? user.morningBriefTime
+          : (user.preferredHour !== undefined ? user.preferredHour : 8);
+        if (localHour === morningHour && user.lastMorningBriefDate !== todayKey) {
+          const text = await messagingIntegration.assistant.buildDailyMessage(user.userId);
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+            chat_id: user.telegramChatId,
+            text,
+            parse_mode: 'Markdown',
+            reply_markup: messagingIntegration._persistentKeyboard()
+          });
+          await messagingIntegration.assistant.updateProfileMeta(user.userId, { lastMorningBriefDate: todayKey });
+          console.log(`☀️ Morning brief sent to user ${user.userId}`);
+        }
+
+        // ── Habit nudge ───────────────────────────────────────────────────────
+        const habitHour = user.habitNudgeTime !== undefined ? user.habitNudgeTime : 20;
+        const habitLoggedToday = user.commitmentHistory?.[todayKey]?.success;
+        if (localHour === habitHour && user.dailyCommitment && !habitLoggedToday
+            && user.lastHabitNudgeDate !== todayKey) {
+          const streak = user.currentStreak || 0;
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+            chat_id: user.telegramChatId,
+            text: `🔔 Hey! Your ${streak}-day streak is on the line.\n\nHave you done your *${user.dailyCommitment.description}* today?\n\nLog it: _"I did ${user.dailyCommitment.minutes} min ${user.dailyCommitment.description}"_`,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [[
+                { text: '✅ I did it', callback_data: `habit_done:${user.userId}` },
+                { text: '⏭ Skip today', callback_data: `habit_skip:${user.userId}` }
+              ]]
+            }
+          });
+          await messagingIntegration.assistant.updateProfileMeta(user.userId, { lastHabitNudgeDate: todayKey });
+          console.log(`🔔 Habit nudge sent to user ${user.userId}`);
+        }
+
+        // ── Energy check-in ───────────────────────────────────────────────────
+        const energyHour = user.energyCheckTime !== undefined ? user.energyCheckTime : 21;
+        const energyLoggedToday = (user.energyLog || []).some(e =>
+          e.timestamp && e.timestamp.startsWith(todayKey)
+        );
+        if (localHour === energyHour && !energyLoggedToday
+            && user.lastEnergyCheckDate !== todayKey) {
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+            chat_id: user.telegramChatId,
+            text: '⚡ *How was your energy today?*\n\nReply with a number: 1 (exhausted) → 10 (on fire)',
+            parse_mode: 'Markdown',
+            reply_markup: messagingIntegration._persistentKeyboard()
+          });
+          await messagingIntegration.assistant.updateProfileMeta(user.userId, { lastEnergyCheckDate: todayKey });
+          console.log(`⚡ Energy check-in sent to user ${user.userId}`);
+        }
+
+        // ── Weekly review (Sundays only) ──────────────────────────────────────
+        const weeklyHour = user.weeklyReviewTime !== undefined ? user.weeklyReviewTime : 18;
+        const isSunday = now.toLocaleString('en-US', { timeZone: tz, weekday: 'long' }) === 'Sunday';
+        const hasEnoughData = Object.keys(user.commitmentHistory || {}).length >= 3;
+        if (isSunday && localHour === weeklyHour && hasEnoughData
+            && user.lastWeeklyReviewDate !== todayKey) {
+          const review = await messagingIntegration.assistant.generateWeeklyReview(user.userId);
+          const formatted = messagingIntegration._formatTelegramResponse(review, user.telegramChatId);
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+            chat_id: user.telegramChatId,
+            text: formatted.text,
+            parse_mode: 'Markdown',
+            reply_markup: messagingIntegration._persistentKeyboard()
+          });
+          await messagingIntegration.assistant.updateProfileMeta(user.userId, { lastWeeklyReviewDate: todayKey });
+          console.log(`📊 Weekly review sent to user ${user.userId}`);
+        }
+
       } catch (err) {
-        console.error(`Daily message failed for user ${user.userId}:`, err.message);
+        console.error(`Scheduled message failed for user ${user.userId}:`, err.message);
       }
     }
   });
-  console.log('⏰ Hourly cron active — daily messages fire at each user\'s preferred hour (default 8am)');
+  console.log('⏰ Hourly cron active — morning brief, habit nudge, energy check-in, weekly review');
 
   // Per-minute reminder cron — fires tasks with deadlineMs in the current minute window
   cron.schedule('* * * * *', async () => {
