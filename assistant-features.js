@@ -734,20 +734,41 @@ RECURRING: [yes/no]`;
   async listTasks(userId) {
     const profile = await this._getOrCreateProfile(userId);
     const tasks = (profile.allTasks || []).filter(t => !t.completed);
-    if (tasks.length === 0) {
+    const tz = profile.timezone || 'Asia/Singapore';
+    const calEvents = await this.getTodayCalendarEvents(userId);
+
+    if (tasks.length === 0 && calEvents.length === 0) {
       return '✨ *No tasks yet!*\n─────────────────\nTry typing one of these to get started:\n\n• _"Call dentist Friday"_\n• _"Submit report by Monday"_\n• _"Buy groceries today"_\n\nOr just tell me what you need to do!';
     }
-    const priorityOrder = { high: 0, medium: 1, low: 2 };
-    const sorted = [...tasks].sort((a, b) =>
-      (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
-    );
-    const lines = ['📋 *Your tasks:*', '─────────────────'];
-    sorted.forEach((t, i) => {
-      const prefix = t.priority === 'high' ? '⚡ ' : '';
-      const recurTag = t.recurring ? ' ⟳' : '';
-      lines.push(`${i + 1}. ${prefix}${t.action}${recurTag} — _${t.deadline}_`);
-    });
-    lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
+
+    const lines = [];
+
+    if (tasks.length > 0) {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      const sorted = [...tasks].sort((a, b) =>
+        (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+      );
+      lines.push('📋 *Your tasks:*', '─────────────────');
+      sorted.forEach((t, i) => {
+        const prefix = t.priority === 'high' ? '⚡ ' : '';
+        const recurTag = t.recurring ? ' ⟳' : '';
+        lines.push(`${i + 1}. ${prefix}${t.action}${recurTag} — _${t.deadline}_`);
+      });
+      lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
+    }
+
+    if (calEvents.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('📅 *Today\'s Calendar*', '─────────────────');
+      calEvents.forEach((e, i) => {
+        const timeStr = e.start && e.start.includes('T')
+          ? new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(e.start))
+          : 'All day';
+        lines.push(`${i + 1}. ${e.title} — _${timeStr}_`);
+      });
+      lines.push('', '💡 Tap ✅ to remove from Calendar');
+    }
+
     return lines.join('\n');
   }
 
