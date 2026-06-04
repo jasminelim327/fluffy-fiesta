@@ -774,7 +774,7 @@ RECURRING: [yes/no]`;
     if (profile.welcomed) return null;
     profile.welcomed = true;
     await this._saveProfile(userId, profile);
-    return '👋 *Welcome to Fluffy Fiesta!*\nI\'m your personal productivity companion on Telegram.\nType *"help"* anytime to see everything I can do.\n─────────────────';
+    return '👋 *Welcome to Fluffy Fiesta!*\n\nI\'m your personal productivity companion. Just type naturally to add tasks, track habits, or ask me anything.\n\nTip: type */start* for a quick guided setup, or */help* to see what I can do.\n─────────────────';
   }
 
   // ============================================

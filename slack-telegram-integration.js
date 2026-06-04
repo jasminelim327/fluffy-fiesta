@@ -218,6 +218,52 @@ class MessagingIntegration {
     return this._appendDailySnapshot(response, userId);
   }
 
+  async handleStart(userId, chatId) {
+    const profile = await this.assistant._getOrCreateProfile(userId);
+
+    if (profile.welcomed && profile.onboardingStep !== 'awaiting_habit') {
+      // Returning user — short re-orientation
+      const streak = profile.currentStreak || 0;
+      const commitment = profile.dailyCommitment;
+      const openTasks = (profile.allTasks || []).filter(t => !t.completed).length;
+      const lines = [
+        '👋 *Welcome back!* You\'re all set up.',
+        '',
+        `🔥 Streak: ${streak} day(s)  |  📌 Open tasks: ${openTasks}`
+      ];
+      if (commitment) lines.push(`🎯 Daily habit: ${commitment.minutes}min ${commitment.description}`);
+      lines.push('', 'Use the buttons below or just type naturally. /help to see everything.');
+      await this.sendToTelegram(chatId, lines.join('\n'), {
+        parse_mode: 'Markdown',
+        reply_markup: this._persistentKeyboard()
+      });
+      return;
+    }
+
+    // New user — 2-message onboarding
+    await this.sendToTelegram(chatId,
+      '👋 *Hey! I\'m your personal productivity companion.*\n\n' +
+      'Here\'s what I do:\n' +
+      '• 📌 Remember your tasks and remind you before deadlines\n' +
+      '• 🔥 Track your daily habits and keep your streak alive\n' +
+      '• 💪 Motivate you and help you reflect on your progress\n\n' +
+      'Let\'s get you set up in 30 seconds.',
+      { parse_mode: 'Markdown' }
+    );
+
+    await this.sendToTelegram(chatId,
+      '*What\'s one thing you want to do every day?*\n\n' +
+      'For example:\n' +
+      '• 15 min reading\n' +
+      '• 30 min workout\n' +
+      '• 10 min journaling\n\n' +
+      'Just type it below 👇',
+      { parse_mode: 'Markdown' }
+    );
+
+    await this.assistant.updateProfileMeta(userId, { welcomed: true, onboardingStep: 'awaiting_habit' });
+  }
+
   async classifyIntent(message) {
     return this.assistant.classifyIntent(message);
   }
