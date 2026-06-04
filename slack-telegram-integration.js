@@ -38,6 +38,23 @@ class MessagingIntegration {
     return map[text] || null;
   }
 
+  async _appendDailySnapshot(response, userId) {
+    try {
+      const profile = await this.assistant._getOrCreateProfile(userId);
+      const tz = profile.timezone || 'UTC';
+      const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+      if (profile.lastSnapshotDate === todayKey) return response;
+      const snapshot = this.assistant._buildDailySnapshot(profile);
+      await this.assistant.updateProfileMeta(userId, { lastSnapshotDate: todayKey });
+      if (response && typeof response.text === 'string') {
+        return { ...response, text: response.text + '\n\n' + snapshot };
+      }
+    } catch (err) {
+      console.error('Daily snapshot failed:', err.message);
+    }
+    return response;
+  }
+
   // ============================================
   // TELEGRAM MESSAGE HANDLERS
   // ============================================
@@ -54,9 +71,11 @@ class MessagingIntegration {
     const intent = shortcutIntent || await this.assistant.classifyIntent(message);
     console.log(`Intent classified as "${intent}" for message:`, message);
 
+    let response;
     switch (intent) {
       case 'help':
-        return this._formatTelegramResponse(this._helpMessage(), chatId);
+        response = this._formatTelegramResponse(this._helpMessage(), chatId);
+        break;
 
       case 'task':
       case 'schedule': {
@@ -70,7 +89,8 @@ class MessagingIntegration {
           );
         }
         if (!taskData.action) {
-          return { chat_id: chatId, text: 'I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".', parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+          response = { chat_id: chatId, text: 'I need a clearer task. Try something like "Buy milk tomorrow" or "Call dentist on Friday".', parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+          break;
         }
         const recurringLine = taskData.recurring ? '🔁 Recurring daily (30 days)' : null;
         const msg = [
@@ -82,60 +102,71 @@ class MessagingIntegration {
           '',
           `💬 _${taskData.motivation}_`
         ].filter(line => line !== null).join('\n');
-        return { chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+        response = { chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+        break;
       }
 
       case 'idea':
-        return this._formatTelegramResponse(await this.assistant.deepenIdea(message, userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.deepenIdea(message, userId), chatId);
+        break;
 
       case 'commit': {
         const minMatch = message.match(/(\d+)\s*min/i);
         if (minMatch) {
           const minutes = parseInt(minMatch[1]);
           const desc = message.replace(/\d+\s*min(ute)?s?/i, '').trim() || 'daily practice';
-          const response = await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
-          if (this.calendarSync && response.commitment) {
+          const commitResponse = await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
+          if (this.calendarSync && commitResponse.commitment) {
             this.calendarSync.addRecurringEvent({
-              action: `Daily habit: ${response.commitment.description}`,
+              action: `Daily habit: ${commitResponse.commitment.description}`,
               deadline: 'tomorrow',
               priority: 'medium',
-              motivation: `Daily habit reminder for ${response.commitment.description}`
-            }, 30, response.commitment.minutes || 30).catch(err =>
+              motivation: `Daily habit reminder for ${commitResponse.commitment.description}`
+            }, 30, commitResponse.commitment.minutes || 30).catch(err =>
               console.error('Calendar habit event failed:', err.message)
             );
           }
-          return this._formatTelegramResponse(response, chatId);
+          response = this._formatTelegramResponse(commitResponse, chatId);
+          break;
         }
-        const numMatch = message.match(/(\d+)/);
-        if (numMatch) {
-          return this._formatTelegramResponse(
-            await this.assistant.logDailyCommitment(userId, parseInt(numMatch[1])), chatId
+        const numMatch2 = message.match(/(\d+)/);
+        if (numMatch2) {
+          response = this._formatTelegramResponse(
+            await this.assistant.logDailyCommitment(userId, parseInt(numMatch2[1])), chatId
           );
+          break;
         }
-        return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        break;
       }
 
       case 'energy': {
         const numMatch = message.match(/(\d+)/);
         if (numMatch) {
-          return this._formatTelegramResponse(
+          response = this._formatTelegramResponse(
             await this.assistant.logEnergy(userId, parseInt(numMatch[1]), 'user logged'), chatId
           );
+          break;
         }
-        return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        break;
       }
 
       case 'review':
-        return this._formatTelegramResponse(await this.assistant.generateWeeklyReview(userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.generateWeeklyReview(userId), chatId);
+        break;
 
       case 'motivation':
-        return this._formatTelegramResponse(await this.assistant.getMotivatation(userId, 'default'), chatId);
+        response = this._formatTelegramResponse(await this.assistant.getMotivatation(userId, 'default'), chatId);
+        break;
 
       case 'pattern':
-        return this._formatTelegramResponse(await this.assistant.analyzePatterns(userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.analyzePatterns(userId), chatId);
+        break;
 
       case 'abandoned':
-        return this._formatTelegramResponse(await this.assistant.checkAbandonedGoals(userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.checkAbandonedGoals(userId), chatId);
+        break;
 
       case 'connect': {
         if (this.onGoogleConnect) {
@@ -157,26 +188,34 @@ class MessagingIntegration {
       }
 
       case 'question':
-        return this._formatTelegramResponse(await this.assistant.answerQuestion(message, userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.answerQuestion(message, userId), chatId);
+        break;
 
       case 'list':
-        return this._formatTelegramResponse(await this.assistant.listTasks(userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.listTasks(userId), chatId);
+        break;
 
       case 'complete':
-        return this._formatTelegramResponse(await this.assistant.completeTask(userId, message), chatId);
+        response = this._formatTelegramResponse(await this.assistant.completeTask(userId, message), chatId);
+        break;
 
       case 'delete':
-        return this._formatTelegramResponse(await this.assistant.deleteTask(userId, message), chatId);
+        response = this._formatTelegramResponse(await this.assistant.deleteTask(userId, message), chatId);
+        break;
 
       case 'streak':
-        return this._formatTelegramResponse(await this.assistant.formatStreakMessage(userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.formatStreakMessage(userId), chatId);
+        break;
 
       case 'dailyconfig':
-        return this._formatTelegramResponse(await this.assistant.setDailyMessageTime(userId, message), chatId);
+        response = this._formatTelegramResponse(await this.assistant.setDailyMessageTime(userId, message), chatId);
+        break;
 
       default:
-        return this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        response = this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
     }
+
+    return this._appendDailySnapshot(response, userId);
   }
 
   async classifyIntent(message) {
