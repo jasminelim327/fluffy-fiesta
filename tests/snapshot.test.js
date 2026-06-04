@@ -35,28 +35,33 @@ test('_buildDailySnapshot shows last energy level', () => {
   expect(snapshot).toContain('8/10');
 });
 
-test('_extractHabitFromMessage parses "15 min reading"', () => {
-  expect(assistant._extractHabitFromMessage('15 min reading')).toEqual({ minutes: 15, description: 'reading' });
+test('_extractHabitFromMessage parses "15 min reading" as time-based', () => {
+  const r = assistant._extractHabitFromMessage('15 min reading');
+  expect(r).toMatchObject({ minutes: 15, description: 'reading', isTimeBased: true });
 });
 
 test('_extractHabitFromMessage strips "of" from "15 min of reading"', () => {
-  expect(assistant._extractHabitFromMessage('15 min of reading')).toEqual({ minutes: 15, description: 'reading' });
+  const r = assistant._extractHabitFromMessage('15 min of reading');
+  expect(r).toMatchObject({ minutes: 15, description: 'reading', isTimeBased: true });
 });
 
 test('_extractHabitFromMessage handles sentence form "I want to do 15 min of reading"', () => {
-  const result = assistant._extractHabitFromMessage('I want to do 15 min of reading');
-  expect(result.minutes).toBe(15);
-  expect(result.description).toBe('reading');
+  const r = assistant._extractHabitFromMessage('I want to do 15 min of reading');
+  expect(r.minutes).toBe(15);
+  expect(r.description).toBe('reading');
+  expect(r.isTimeBased).toBe(true);
 });
 
-test('_extractHabitFromMessage handles non-time habit "30 pushups"', () => {
-  expect(assistant._extractHabitFromMessage('30 pushups')).toEqual({ minutes: 30, description: 'pushups' });
+test('_extractHabitFromMessage handles non-time habit "30 pushups" as not time-based', () => {
+  const r = assistant._extractHabitFromMessage('30 pushups');
+  expect(r).toMatchObject({ minutes: 30, description: 'pushups', isTimeBased: false });
 });
 
-test('_extractHabitFromMessage handles pure description "meditation"', () => {
-  const result = assistant._extractHabitFromMessage('meditation');
-  expect(result.minutes).toBe(10);
-  expect(result.description).toBe('meditation');
+test('_extractHabitFromMessage handles pure description "meditation" as not time-based', () => {
+  const r = assistant._extractHabitFromMessage('meditation');
+  expect(r.minutes).toBe(10);
+  expect(r.description).toBe('meditation');
+  expect(r.isTimeBased).toBe(false);
 });
 
 test('_buildDailySnapshot counts tasks due in next 24h', () => {

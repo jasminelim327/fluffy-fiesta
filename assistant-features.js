@@ -703,7 +703,7 @@ RECURRING: [yes/no]`;
     }
     const lines = ['📋 *Your tasks:*', '─────────────────'];
     tasks.forEach((t, i) => lines.push(`${i + 1}. ${t.action} — _${t.deadline}_`));
-    lines.push('', '💡 Say "done with [task]" to tick one off.');
+    lines.push('', '💡 Tap ✅ to complete, or say _"done with [task name]"_.');
     return lines.join('\n');
   }
 
@@ -766,7 +766,7 @@ RECURRING: [yes/no]`;
     return [
       `🔥 *Your streak: ${s.currentStreak} day(s)*`,
       '─────────────────',
-      `🎯 Daily goal: ${s.dailyCommitment.minutes}min ${s.dailyCommitment.description}`,
+      `🎯 Daily goal: ${this._formatHabit(s.dailyCommitment)}`,
       todayLine,
       '💪 Keep it going!'
     ].join('\n');
@@ -879,21 +879,27 @@ Keep it under 20 words. No emojis. Just the sentence.`;
         .replace(/^(of|for|on|doing|to do)\s+/i, '')
         .replace(/\b(daily|every day|everyday)\b/gi, '')
         .trim() || 'daily practice';
-      return { minutes, description: desc };
+      return { minutes, description: desc, isTimeBased: true };
     }
     const numDescMatch = message.match(/(\d+)\s+(.+)/);
     if (numDescMatch) {
       const desc = numDescMatch[2]
         .replace(/\b(daily|every day|everyday)\b/gi, '')
         .trim();
-      return { minutes: parseInt(numDescMatch[1]), description: desc || 'daily practice' };
+      return { minutes: parseInt(numDescMatch[1]), description: desc || 'daily practice', isTimeBased: false };
     }
     // Pure description without number — e.g. "meditation"
     const desc = message
       .replace(/^(do|set|track|start|begin)\s+/i, '')
       .replace(/\b(daily|every day|everyday)\b/gi, '')
       .trim() || 'daily practice';
-    return { minutes: 10, description: desc };
+    return { minutes: 10, description: desc, isTimeBased: false };
+  }
+
+  _formatHabit(commitment) {
+    if (!commitment) return '';
+    if (commitment.isTimeBased === false) return `${commitment.minutes} ${commitment.description}`;
+    return `${commitment.minutes}min ${commitment.description}`;
   }
 
   // ============================================
@@ -1029,10 +1035,14 @@ Keep it under 20 words. No emojis. Just the sentence.`;
   _buildDailySnapshot(profile) {
     const now = Date.now();
     const in24h = now + 24 * 60 * 60 * 1000;
+    const tz = profile.timezone || 'UTC';
+    const todayFormatted = new Date().toLocaleDateString('en-US', {
+      timeZone: tz, weekday: 'short', month: 'short', day: 'numeric'
+    });
     const tasksDue = (profile.allTasks || []).filter(t => {
       if (t.completed) return false;
       if (t.deadlineMs) return t.deadlineMs >= now && t.deadlineMs < in24h;
-      return t.deadline === 'today';
+      return t.deadline === 'today' || t.deadline === todayFormatted;
     });
     const tasksLine = tasksDue.length > 0
       ? `• 📌 ${tasksDue.length} task(s) due today`

@@ -123,7 +123,8 @@ class MessagingIntegration {
         const habitLoggedToday = profile.commitmentHistory?.[todayKey]?.success;
         let taskText = msg;
         if (profile.dailyCommitment && !habitLoggedToday) {
-          taskText += `\n\n💬 _Don't forget your ${profile.dailyCommitment.minutes}min ${profile.dailyCommitment.description} today — you're on a ${profile.currentStreak || 0}-day streak!_`;
+          const habitStr = this.assistant._formatHabit(profile.dailyCommitment);
+          taskText += `\n\n💬 _Don't forget your ${habitStr} today — you're on a ${profile.currentStreak || 0}-day streak!_`;
         }
         const tzPrompt = this._maybeAddTimezonePrompt(profile);
         if (tzPrompt) {
@@ -139,31 +140,32 @@ class MessagingIntegration {
         break;
 
       case 'commit': {
-        const minMatch = message.match(/(\d+)\s*min/i);
-        if (minMatch || /set|track|commit|habit|daily/i.test(message)) {
-          const { minutes, description: desc } = this.assistant._extractHabitFromMessage(message);
-          const commitResponse = await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
-          if (this.calendarSync && commitResponse.commitment) {
-            this.calendarSync.addRecurringEvent({
-              action: `Daily habit: ${commitResponse.commitment.description}`,
-              deadline: 'tomorrow',
-              priority: 'medium',
-              motivation: `Daily habit reminder for ${commitResponse.commitment.description}`
-            }, 30, commitResponse.commitment.minutes || 30).catch(err =>
-              console.error('Calendar habit event failed:', err.message)
+        const isLogging = /\b(completed?|did|done|logged?|finished?|i did|i do)\b/i.test(message);
+        const numOnly = message.match(/^(\d+)$/);
+        if (isLogging || numOnly) {
+          // Logging progress: "I completed 20 min", "done 30 min", "45"
+          const numMatch2 = message.match(/(\d+)/);
+          if (numMatch2) {
+            response = this._formatTelegramResponse(
+              await this.assistant.logDailyCommitment(userId, parseInt(numMatch2[1])), chatId
             );
+            break;
           }
-          response = this._formatTelegramResponse(commitResponse, chatId);
-          break;
         }
-        const numMatch2 = message.match(/(\d+)/);
-        if (numMatch2) {
-          response = this._formatTelegramResponse(
-            await this.assistant.logDailyCommitment(userId, parseInt(numMatch2[1])), chatId
+        // Setting a habit: "15 min reading", "30 pushups", "meditation daily"
+        const { minutes, description: desc } = this.assistant._extractHabitFromMessage(message);
+        const commitResponse = await this.assistant.setDailyCommitment(userId, { minutes, description: desc });
+        if (this.calendarSync && commitResponse.commitment) {
+          this.calendarSync.addRecurringEvent({
+            action: `Daily habit: ${commitResponse.commitment.description}`,
+            deadline: 'tomorrow',
+            priority: 'medium',
+            motivation: `Daily habit reminder for ${commitResponse.commitment.description}`
+          }, 30, commitResponse.commitment.minutes || 30).catch(err =>
+            console.error('Calendar habit event failed:', err.message)
           );
-          break;
         }
-        response = this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
+        response = this._formatTelegramResponse(commitResponse, chatId);
         break;
       }
 

@@ -979,7 +979,7 @@ app.listen(PORT, async () => {
           const streak = user.currentStreak || 0;
           await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
             chat_id: user.telegramChatId,
-            text: `🔔 Hey! Your ${streak}-day streak is on the line.\n\nHave you done your *${user.dailyCommitment.description}* today?\n\nLog it: _"I did ${user.dailyCommitment.minutes} min ${user.dailyCommitment.description}"_`,
+            text: `🔔 Hey! Your ${streak}-day streak is on the line.\n\nHave you done your *${user.dailyCommitment.description}* today?\n\nLog it: _"I did it"_ or tap below`,
             parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [[
