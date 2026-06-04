@@ -54,8 +54,8 @@ class MessagingIntegration {
       const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
       if (profile.lastSnapshotDate === todayKey) return response;
       const snapshot = this.assistant._buildDailySnapshot(profile);
-      await this.assistant.updateProfileMeta(userId, { lastSnapshotDate: todayKey });
       if (response && typeof response.text === 'string') {
+        await this.assistant.updateProfileMeta(userId, { lastSnapshotDate: todayKey });
         return { ...response, text: response.text + '\n\n' + snapshot };
       }
     } catch (err) {
@@ -71,7 +71,7 @@ class MessagingIntegration {
   async handleTelegramMessage(message, userId, chatId) {
     // Handle onboarding habit capture
     const profile = await this.assistant._getOrCreateProfile(userId);
-    if (profile.onboardingStep === 'awaiting_habit') {
+    if (profile.onboardingStep === 'awaiting_habit' && !this._resolveKeyboardShortcut(message)) {
       return this._handleOnboardingReply(message, userId, chatId);
     }
 
