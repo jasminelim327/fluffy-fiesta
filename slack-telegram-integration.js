@@ -15,6 +15,29 @@ class MessagingIntegration {
     this.onGoogleConnect = config.onGoogleConnect || null;
   }
 
+  _persistentKeyboard() {
+    return {
+      keyboard: [
+        [{ text: '📋 My Tasks' }, { text: '🔥 My Streak' }, { text: '💪 Motivate Me' }],
+        [{ text: '📊 Patterns' }, { text: '📅 Weekly Review' }, { text: '❓ Help' }]
+      ],
+      resize_keyboard: true,
+      persistent: true
+    };
+  }
+
+  _resolveKeyboardShortcut(text) {
+    const map = {
+      '📋 My Tasks': 'list',
+      '🔥 My Streak': 'streak',
+      '💪 Motivate Me': 'motivation',
+      '📊 Patterns': 'pattern',
+      '📅 Weekly Review': 'review',
+      '❓ Help': 'help'
+    };
+    return map[text] || null;
+  }
+
   // ============================================
   // TELEGRAM MESSAGE HANDLERS
   // ============================================
