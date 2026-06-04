@@ -728,7 +728,34 @@ RECURRING: [yes/no]`;
     const lines = ['📋 *Your tasks:*', '─────────────────'];
     sorted.forEach((t, i) => {
       const prefix = t.priority === 'high' ? '⚡ ' : '';
-      lines.push(`${i + 1}. ${prefix}${t.action} — _${t.deadline}_`);
+      const recurTag = t.recurring ? ' ⟳' : '';
+      lines.push(`${i + 1}. ${prefix}${t.action}${recurTag} — _${t.deadline}_`);
+    });
+    lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
+    return lines.join('\n');
+  }
+
+  async listTodayTasks(userId) {
+    const profile = await this._getOrCreateProfile(userId);
+    const now = Date.now();
+    const in24h = now + 24 * 60 * 60 * 1000;
+    const tz = profile.timezone || 'UTC';
+    const todayFormatted = new Date().toLocaleDateString('en-US', {
+      timeZone: tz, weekday: 'short', month: 'short', day: 'numeric'
+    });
+    const tasks = (profile.allTasks || []).filter(t => {
+      if (t.completed) return false;
+      if (t.deadlineMs) return t.deadlineMs >= now && t.deadlineMs < in24h;
+      return t.deadline === 'today' || t.deadline === todayFormatted;
+    });
+    if (tasks.length === 0) {
+      return `✨ *Nothing due today!* You're all clear.\n\n_Say "show all tasks" to see everything on your list._`;
+    }
+    const lines = [`📅 *Due today — ${todayFormatted}:*`, '─────────────────'];
+    tasks.forEach((t, i) => {
+      const prefix = t.priority === 'high' ? '⚡ ' : '';
+      const recurTag = t.recurring ? ' ⟳' : '';
+      lines.push(`${i + 1}. ${prefix}${t.action}${recurTag}`);
     });
     lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
     return lines.join('\n');
@@ -809,14 +836,14 @@ ${taskList}
 
 Reply in EXACTLY this format:
 TASK_NAME: [the task name from the list above, or closest match]
-EDIT_TYPE: reschedule | rename
-NEW_VALUE: [new deadline (e.g. "Fri, Jun 7") or new task name]
+EDIT_TYPE: reschedule | rename | reprioritize
+NEW_VALUE: [new deadline (e.g. "Fri, Jun 7"), new task name, or priority: high/medium/low]
 
 Reply ONLY with these 3 lines. No other text.`;
 
     const raw = await this._callOpenRouter(message, systemPrompt);
     const taskNameMatch = raw.match(/TASK_NAME:\s*(.+)/i);
-    const editTypeMatch = raw.match(/EDIT_TYPE:\s*(reschedule|rename)/i);
+    const editTypeMatch = raw.match(/EDIT_TYPE:\s*(reschedule|rename|reprioritize)/i);
     const newValueMatch = raw.match(/NEW_VALUE:\s*(.+)/i);
 
     if (!taskNameMatch || !editTypeMatch || !newValueMatch) {
@@ -854,7 +881,17 @@ Reply ONLY with these 3 lines. No other text.`;
       return `✏️ *Renamed!* "${oldName}" → "${task.action}".`;
     }
 
-    return "I couldn't apply that edit. Try: _\"reschedule [task] to Friday\"_.";
+    if (editType === 'reprioritize') {
+      const p = newValue.toLowerCase().trim();
+      const priority = p.includes('high') ? 'high' : p.includes('low') ? 'low' : 'medium';
+      task.priority = priority;
+      task.lastTouched = new Date().toISOString();
+      await this._saveProfile(userId, profile);
+      const emoji = priority === 'high' ? '⚡' : priority === 'low' ? '○' : '●';
+      return `${emoji} *Priority updated!* "${task.action}" is now *${priority}* priority.`;
+    }
+
+    return "I couldn't apply that edit. Try: _\"reschedule [task] to Friday\"_, _\"rename [task] to [name]\"_, or _\"set [task] to high priority\"_.";
   }
 
   async completeTask(userId, message) {

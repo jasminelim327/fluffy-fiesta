@@ -237,8 +237,24 @@ class MessagingIntegration {
         break;
 
       case 'list': {
-        const listText = await this.assistant.listTasks(userId);
-        const openTasks = (profile.allTasks || []).filter(t => !t.completed);
+        const isTodayQuery = /\btoday\b/i.test(message);
+        const listText = isTodayQuery
+          ? await this.assistant.listTodayTasks(userId)
+          : await this.assistant.listTasks(userId);
+        const openTasks = (profile.allTasks || []).filter(t => {
+          if (t.completed) return false;
+          if (isTodayQuery) {
+            const now = Date.now();
+            const in24h = now + 24 * 60 * 60 * 1000;
+            const tz = profile.timezone || 'UTC';
+            const todayFormatted = new Date().toLocaleDateString('en-US', {
+              timeZone: tz, weekday: 'short', month: 'short', day: 'numeric'
+            });
+            if (t.deadlineMs) return t.deadlineMs >= now && t.deadlineMs < in24h;
+            return t.deadline === 'today' || t.deadline === todayFormatted;
+          }
+          return true;
+        });
         const priorityOrder = { high: 0, medium: 1, low: 2 };
         const sortedTasks = [...openTasks].sort((a, b) =>
           (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
