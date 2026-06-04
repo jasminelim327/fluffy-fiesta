@@ -376,13 +376,23 @@ BREAKDOWN: [3-5 concrete milestones in order]
 FIRST_STEP: [what to do THIS WEEK]
 MOTIVATION: [why this matters beyond money/status]`;
 
-    const response = await this._callOpenRouter(`Help me start: ${goal.title}`, systemPrompt);
+    const raw = await this._callOpenRouter(`Help me start: ${goal.title}`, systemPrompt);
 
-    return {
-      goalId,
-      goal: fullGoal,
-      coachResponse: response
+    const get = (label) => {
+      const match = raw.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i'));
+      return match ? match[1].trim() : null;
     };
+    const belief = get('BELIEF');
+    const firstStep = get('FIRST.?STEP');
+    const motivation = get('MOTIVATION');
+
+    const lines = [];
+    if (belief) lines.push(`🚀 *${belief}*`);
+    if (firstStep) lines.push(`\n🗓 *This week*\n${firstStep}`);
+    if (motivation) lines.push(`\n💙 ${motivation}`);
+    const coachResponse = lines.join('\n') || raw;
+
+    return { goalId, goal: fullGoal, coachResponse };
   }
 
   async progressMilestone(userId, goalId, milestoneIndex) {
