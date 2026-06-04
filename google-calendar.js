@@ -235,6 +235,49 @@ class GoogleCalendarSync {
     }
   }
 
+  async getTodayEvents(timezone) {
+    try {
+      if (!this.auth) await this.initialize();
+      const calendar = google.calendar({ version: 'v3', auth: this.auth });
+      const tz = timezone || this.timezone;
+
+      // Compute UTC bounds for "today" in the user's timezone.
+      // Strategy: noon UTC on today-in-tz tells us the tz offset; use that to shift midnight.
+      const now = new Date();
+      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+      const tomorrowDate = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const tomorrowStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(tomorrowDate);
+
+      // Detect tz offset by checking what hour it is in the tz when UTC is noon
+      const refDate = new Date(todayStr + 'T12:00:00Z');
+      const tzHour = parseInt(new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour: 'numeric', hour12: false
+      }).format(refDate));
+      const offsetHours = tzHour - 12;
+
+      const timeMin = new Date(new Date(todayStr + 'T00:00:00Z').getTime() - offsetHours * 3600000).toISOString();
+      const timeMax = new Date(new Date(tomorrowStr + 'T00:00:00Z').getTime() - offsetHours * 3600000).toISOString();
+
+      const response = await calendar.events.list({
+        calendarId: this.calendarId,
+        timeMin,
+        timeMax,
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: 20
+      });
+
+      return (response.data.items || []).map(event => ({
+        id: event.id,
+        title: event.summary || '(no title)',
+        start: event.start.dateTime || event.start.date
+      }));
+    } catch (error) {
+      console.error('❌ getTodayEvents error:', error.message);
+      return [];
+    }
+  }
+
   /**
    * Delete event
    */
