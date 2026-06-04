@@ -348,6 +348,27 @@ app.post('/telegram/webhook', async (req, res) => {
       } catch (err) {
         console.error('Callback action failed:', err.message);
       }
+    } else if (action === 'shortcut' && messagingIntegration) {
+      const shortcutMap = {
+        list: 'list my tasks',
+        streak: 'show my streak',
+        motivation: 'motivate me',
+        patterns: 'show my patterns',
+        goals: 'check abandoned goals'
+      };
+      const target = parts[2];
+      const cbUserId = parts[1];
+      if (shortcutMap[target]) {
+        try {
+          const formatted = await messagingIntegration.handleTelegramMessage(shortcutMap[target], cbUserId, cbChatId);
+          await messagingIntegration.sendToTelegram(formatted.chat_id || cbChatId, formatted.text, {
+            parse_mode: formatted.parse_mode,
+            reply_markup: formatted.reply_markup
+          });
+        } catch (err) {
+          console.error('Shortcut callback failed:', err.message);
+        }
+      }
     }
     return;
   }
@@ -446,6 +467,27 @@ async function telegramPolling() {
               });
             } catch (err) {
               console.error('Polling callback action failed:', err.message);
+            }
+          } else if (action === 'shortcut' && messagingIntegration) {
+            const shortcutMap = {
+              list: 'list my tasks',
+              streak: 'show my streak',
+              motivation: 'motivate me',
+              patterns: 'show my patterns',
+              goals: 'check abandoned goals'
+            };
+            const target = parts[2];
+            const cbUserId = parts[1];
+            if (shortcutMap[target]) {
+              try {
+                const formatted = await messagingIntegration.handleTelegramMessage(shortcutMap[target], cbUserId, cbChatId);
+                await messagingIntegration.sendToTelegram(formatted.chat_id || cbChatId, formatted.text, {
+                  parse_mode: formatted.parse_mode,
+                  reply_markup: formatted.reply_markup
+                });
+              } catch (err) {
+                console.error('Shortcut callback failed:', err.message);
+              }
             }
           }
           continue;

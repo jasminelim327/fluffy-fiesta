@@ -38,6 +38,12 @@ class MessagingIntegration {
     return map[text] || null;
   }
 
+  _sendContextualButtons(chatId, userId, buttons) {
+    this.sendToTelegram(chatId, '👆', {
+      reply_markup: { inline_keyboard: buttons }
+    }).catch(err => console.error('Contextual button send failed:', err.message));
+  }
+
   async _appendDailySnapshot(response, userId) {
     try {
       const profile = await this.assistant._getOrCreateProfile(userId);
@@ -162,6 +168,13 @@ class MessagingIntegration {
           response = this._formatTelegramResponse(
             await this.assistant.logEnergy(userId, parseInt(numMatch[1]), 'user logged'), chatId
           );
+          const energyLevel = parseInt(numMatch[1]);
+          if (energyLevel <= 4) {
+            this._sendContextualButtons(chatId, userId, [[
+              { text: '💪 Motivate Me', callback_data: `shortcut:${userId}:motivation` },
+              { text: '📋 My Tasks', callback_data: `shortcut:${userId}:list` }
+            ]]);
+          }
           break;
         }
         response = this._formatTelegramResponse(await this.assistant.answerDirectly(message, userId), chatId);
@@ -170,6 +183,10 @@ class MessagingIntegration {
 
       case 'review':
         response = this._formatTelegramResponse(await this.assistant.generateWeeklyReview(userId), chatId);
+        this._sendContextualButtons(chatId, userId, [[
+          { text: '📊 See Patterns', callback_data: `shortcut:${userId}:patterns` },
+          { text: '🎯 Revisit Goals', callback_data: `shortcut:${userId}:goals` }
+        ]]);
         break;
 
       case 'motivation':
@@ -213,6 +230,10 @@ class MessagingIntegration {
 
       case 'complete':
         response = this._formatTelegramResponse(await this.assistant.completeTask(userId, message), chatId);
+        this._sendContextualButtons(chatId, userId, [[
+          { text: '📋 Remaining Tasks', callback_data: `shortcut:${userId}:list` },
+          { text: '🔥 My Streak', callback_data: `shortcut:${userId}:streak` }
+        ]]);
         break;
 
       case 'delete':
