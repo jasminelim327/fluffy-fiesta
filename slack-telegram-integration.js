@@ -108,7 +108,17 @@ class MessagingIntegration {
           '',
           `💬 _${taskData.motivation}_`
         ].filter(line => line !== null).join('\n');
-        response = { chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+        // Append habit nudge if habit not logged today
+        const todayKey = new Intl.DateTimeFormat('en-CA', {
+          timeZone: profile.timezone || 'UTC'
+        }).format(new Date());
+        const habitLoggedToday = profile.commitmentHistory?.[todayKey]?.success;
+        if (profile.dailyCommitment && !habitLoggedToday) {
+          const nudge = `\n\n💬 _Don't forget your ${profile.dailyCommitment.minutes}min ${profile.dailyCommitment.description} today — you're on a ${profile.currentStreak || 0}-day streak!_`;
+          response = { chat_id: chatId, text: msg + nudge, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+        } else {
+          response = { chat_id: chatId, text: msg, parse_mode: 'Markdown', reply_markup: this._persistentKeyboard() };
+        }
         break;
       }
 
