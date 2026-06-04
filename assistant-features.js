@@ -604,6 +604,8 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
     }
     if (/\b(remind(er)?|recurring|every day|daily reminder|repeat)\b/i.test(normalized)) return 'task';
     if (/\b(streak|how many days)\b/i.test(normalized)) return 'streak';
+    if (/\b(long.?term goal|big goal|set a goal|my goals|my long.?term)\b/i.test(normalized)) return 'longterm';
+    if (/\b(milestone done|finished the|completed the|i finished|i completed)\b/i.test(normalized)) return 'milestonedone';
     if (/\b(my stats|show stats|total tasks|how many tasks|tasks completed)\b/i.test(normalized)) return 'stats';
     if (/\b(my settings|show settings|current settings|what time|when do you|my config)\b/i.test(normalized)) return 'settings';
     if (/\b(peak hours|best time to work|optimal schedule|when should i work|most productive time)\b/i.test(normalized)) return 'peakhours';
@@ -632,6 +634,8 @@ stats - viewing productivity statistics ("my stats", "show my stats", "how many 
 settings - viewing current configuration ("my settings", "what time is my morning brief", "show my config")
 peakhours - viewing optimal work schedule ("when should I work", "my peak hours", "best time to work")
 insight - requesting deep personal coaching ("coach me", "personal insight", "who am I as a creator")
+longterm - setting or viewing long-term goals ("I want to build X", "my long-term goals", "big goal", "set a big goal", "show my goals")
+milestonedone - completing a milestone of a long-term goal ("I finished the MVP", "milestone done", "I completed X")
 dailyconfig - setting message times ("send my daily message at 7am", "habit nudge at 9pm", "morning brief off")
 chat - anything else (casual talk, follow-ups that are not questions)
 
@@ -640,7 +644,7 @@ Reply with ONLY the single intent word. No punctuation, no explanation.`;
     try {
       const result = await this._callOpenRouter(message, systemPrompt);
       const intent = (result || '').trim().toLowerCase().replace(/[^a-z]/g, '');
-      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','edit','streak','stats','settings','peakhours','insight','dailyconfig','chat'];
+      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','edit','streak','stats','settings','peakhours','insight','longterm','milestonedone','dailyconfig','chat'];
       return valid.includes(intent) ? intent : 'chat';
     } catch {
       return 'chat';
