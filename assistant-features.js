@@ -238,7 +238,11 @@ Cover: acknowledge the gap, why this goal matters, that it's okay to restart, an
     const weekStats = this._calculateWeekStats(profile);
 
     if (weekStats.attempts < 3) {
-      return 'Not enough data for a full review yet 📊\n\nKeep logging for a few days — I need at least 3 days of data to spot patterns.\n\nWant to set a daily habit to track? Try _"Set 15 min reading every day"_.';
+      const hasHabit = !!profile.dailyCommitment;
+      const habitLine = hasHabit
+        ? `You have a habit set: *${profile.dailyCommitment.description}*. Each day you check in (tap ✅ on the habit nudge or type _"I did it"_) counts as a data point.`
+        : `Try setting a daily habit first — e.g. _"15 min reading every day"_ — then check in each day.`;
+      return `📊 *Not enough data yet*\n\nI need at least 3 days of check-ins to spot patterns and give you a meaningful review.\n\n${habitLine}\n\nAlso log your energy each day (just send a number like _"7"_) — that's how I learn when you work best.`;
     }
 
     const systemPrompt = `You are a thoughtful friend doing a weekly check-in.
@@ -568,30 +572,48 @@ Show you care about their growth. Be warm and real. One paragraph.`;
   // ============================================
 
   async getPersonalInsight(userId) {
-    /*
-    Deep analysis of their personality as a worker/creator:
-    - How do they respond to deadlines vs freedom?
-    - Do they prefer incremental or big-bang progress?
-    - Are they motivated by external validation or internal growth?
-    - How does their identity relate to their goals?
-    */
     const profile = await this._getOrCreateProfile(userId);
-    
-    const systemPrompt = `You are a therapist + coach + best friend.
-Based on their behavior patterns, tell them something true about how they work best.
-Something that helps them understand themselves, not judge themselves.
 
-Their data: ${JSON.stringify(profile, null, 2)}
+    const streak = profile.currentStreak || 0;
+    const habit = profile.dailyCommitment?.description || null;
+    const energyLog = (profile.energyLog || []).slice(-7);
+    const avgEnergy = energyLog.length
+      ? (energyLog.reduce((s, e) => s + e.level, 0) / energyLog.length).toFixed(1)
+      : null;
+    const completedTasks = (profile.allTasks || []).filter(t => t.completed).length;
+    const openTasks = (profile.allTasks || []).filter(t => !t.completed).length;
+    const goals = (profile.longTermGoals || []).filter(g => g.status === 'active');
+    const weekStats = this._calculateWeekStats(profile);
 
-Format:
-WHO_THEY_ARE: [describe their working style]
-SUPERPOWER: [what comes naturally to them]
-KRYPTONITE: [what trips them up (without judgment)]
-REFRAME: [how to think about their challenges]
-PATH_FORWARD: [how to work WITH their nature, not against it]`;
+    const hasEnoughData = streak > 0 || completedTasks > 0 || avgEnergy || goals.length > 0;
 
-    const response = await this._callOpenRouter('Who am I as a creator?', systemPrompt);
-    return response;
+    if (!hasEnoughData) {
+      return '🧠 *Your coaching profile is still building up.*\n\nSet a daily habit, complete a few tasks, and log your energy for a few days — then I\'ll have real patterns to reflect back to you.';
+    }
+
+    const context = [
+      habit ? `Daily habit: ${habit} (${streak}-day streak)` : 'No daily habit set',
+      avgEnergy ? `Average energy this week: ${avgEnergy}/10` : 'No energy data yet',
+      `Tasks: ${completedTasks} completed, ${openTasks} open`,
+      goals.length ? `Active goals: ${goals.map(g => g.title).join(', ')}` : 'No long-term goals set',
+      weekStats.mostActiveDay ? `Most active day: ${weekStats.mostActiveDay}` : ''
+    ].filter(Boolean).join('\n');
+
+    const systemPrompt = `You are a warm, direct personal coach. Based on real data about this person, give them a genuine coaching moment.
+
+Their actual data:
+${context}
+
+Write a short coaching message (4–6 sentences) that:
+1. Reflects something specific you notice in their data (reference the actual numbers, not generic observations)
+2. Names one thing they're genuinely doing well
+3. Names one honest pattern that might be holding them back
+4. Ends with one concrete suggestion for this week
+
+Write as a trusted friend who has been watching their progress. No bullet points, no headers — just direct, warm prose. Do not use generic motivational quotes or astrology.`;
+
+    const raw = await this._callOpenRouter('Give me a coaching moment', systemPrompt);
+    return `🧠 *Your coaching moment*\n\n${raw.trim()}`;
   }
 
   // ============================================
@@ -604,12 +626,15 @@ PATH_FORWARD: [how to work WITH their nature, not against it]`;
     if (/^(hi|hello|hey|yo|hola|sup|good morning|good afternoon|good evening|ok|okay|yes|sure|ready|yep|yeah|nope|nah|fine|thanks?)$/i.test(normalized.replace(/[^\w\s]/g, '').trim())) {
       return 'chat';
     }
+    // Time-based habits ("15 min X every day") go to commit, not task
+    if (/\d+\s*min/i.test(normalized) && /\b(every day|daily|each day)\b/i.test(normalized)) return 'commit';
     if (/\b(remind(er)?|recurring|every day|daily reminder|repeat)\b/i.test(normalized)) return 'task';
     if (/\b(streak|how many days)\b/i.test(normalized)) return 'streak';
     if (/\b(long.?term goal|big goal|set a goal|my goals|my long.?term)\b/i.test(normalized)) return 'longterm';
     if (/\b(milestone done|finished the|completed the|i finished|i completed)\b/i.test(normalized)) return 'milestonedone';
     if (/\b(my stats|show stats|total tasks|how many tasks|tasks completed)\b/i.test(normalized)) return 'stats';
     if (/\b(my settings|show settings|current settings|what time|when do you|my config)\b/i.test(normalized)) return 'settings';
+    if (/\b(my timezone|set timezone|timezone is|change timezone|my location is|set location|i('?m| am) in)\b/i.test(normalized)) return 'timezone';
     if (/\b(peak hours|best time to work|optimal schedule|when should i work|most productive time)\b/i.test(normalized)) return 'peakhours';
     if (/\b(personal insight|coach me|who am i|how do i work best|deep analysis)\b/i.test(normalized)) return 'insight';
     if (/\b(reschedule|rename|change.*task|move.*task|update.*task|edit.*task)\b/i.test(normalized)) return 'edit';
@@ -646,7 +671,7 @@ Reply with ONLY the single intent word. No punctuation, no explanation.`;
     try {
       const result = await this._callOpenRouter(message, systemPrompt);
       const intent = (result || '').trim().toLowerCase().replace(/[^a-z]/g, '');
-      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','edit','streak','stats','settings','peakhours','insight','longterm','milestonedone','dailyconfig','chat'];
+      const valid = ['task','schedule','idea','commit','energy','review','motivation','pattern','abandoned','help','connect','question','list','complete','delete','edit','streak','stats','settings','timezone','peakhours','insight','longterm','milestonedone','dailyconfig','chat'];
       return valid.includes(intent) ? intent : 'chat';
     } catch {
       return 'chat';
@@ -845,7 +870,7 @@ RECURRING: [yes/no]`;
       '⚙️ *Your Settings*',
       '─────────────────',
       `🔥 Daily habit: ${habit}`,
-      `🌍 Timezone: ${profile.timezone || 'not set — share location to fix'}`,
+      `🌍 Timezone: ${profile.timezone || 'not set'}`,
       '',
       '*Scheduled messages:*',
       `☀️ Morning brief: ${fmt(morningHour)}`,
@@ -853,9 +878,35 @@ RECURRING: [yes/no]`;
       `⚡ Energy check-in: ${fmt(profile.energyCheckTime ?? 21)}`,
       `📊 Weekly review: Sundays at ${fmt(profile.weeklyReviewTime ?? 18)}`,
       '',
-      '_Say "morning brief at 7am" or "habit nudge off" to change any time._'
+      '_Change times: "morning brief at 7am" or "habit nudge off"_',
+      profile.timezone ? null : '_Set timezone: "my timezone is Singapore" or share your 📍 location_'
     ];
-    return lines.join('\n');
+    return lines.filter(l => l !== null).join('\n');
+  }
+
+  async setTimezoneByName(userId, tzInput) {
+    const tzMap = {
+      singapore: 'Asia/Singapore', sg: 'Asia/Singapore',
+      'kuala lumpur': 'Asia/Kuala_Lumpur', kl: 'Asia/Kuala_Lumpur', malaysia: 'Asia/Kuala_Lumpur',
+      jakarta: 'Asia/Jakarta', indonesia: 'Asia/Jakarta',
+      bangkok: 'Asia/Bangkok', thailand: 'Asia/Bangkok',
+      manila: 'Asia/Manila', philippines: 'Asia/Manila',
+      tokyo: 'Asia/Tokyo', japan: 'Asia/Tokyo',
+      sydney: 'Australia/Sydney', australia: 'Australia/Sydney',
+      london: 'Europe/London', uk: 'Europe/London',
+      'new york': 'America/New_York', nyc: 'America/New_York', 'us east': 'America/New_York',
+      'los angeles': 'America/Los_Angeles', la: 'America/Los_Angeles', 'us west': 'America/Los_Angeles',
+      dubai: 'Asia/Dubai', uae: 'Asia/Dubai',
+      mumbai: 'Asia/Kolkata', india: 'Asia/Kolkata',
+      utc: 'UTC', gmt: 'UTC'
+    };
+    const key = tzInput.toLowerCase().trim();
+    const tz = tzMap[key] || (Object.values(Intl.supportedValuesOf?.('timeZone') || []).includes(tzInput) ? tzInput : null);
+    if (!tz) {
+      return `I don't recognise _"${tzInput}"_ as a timezone. Try a city name like _"Singapore"_, _"London"_, _"New York"_, or share your 📍 location.`;
+    }
+    await this.updateProfileMeta(userId, { timezone: tz });
+    return `🌍 Timezone set to *${tz}*. Scheduled messages will now arrive at the right local time.`;
   }
 
   async editTask(userId, message) {

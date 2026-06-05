@@ -311,6 +311,13 @@ class MessagingIntegration {
         response = this._formatTelegramResponse(await this.assistant.showSettings(userId), chatId);
         break;
 
+      case 'timezone': {
+        const tzMatch = message.match(/(?:timezone is|timezone|location is|location|i'?m in|i am in)\s+(.+)/i);
+        const tzInput = tzMatch ? tzMatch[1].trim() : message.trim();
+        response = this._formatTelegramResponse(await this.assistant.setTimezoneByName(userId, tzInput), chatId);
+        break;
+      }
+
       case 'peakhours':
         response = this._formatTelegramResponse(await this.assistant.getOptimalWorkSchedule(userId), chatId);
         break;
