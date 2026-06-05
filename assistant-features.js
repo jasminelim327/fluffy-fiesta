@@ -1084,14 +1084,39 @@ Reply ONLY with these 3 lines. No other text.`;
     if (!s.dailyCommitment) {
       return 'No daily habit set yet 🌱\n─────────────────\nTell me what you want to do every day, for example:\n\n• _"Set 15 min reading every day"_\n• _"30 min workout daily"_\n\nI\'ll track your streak automatically.';
     }
-    const todayLine = s.todayComplete ? '✅ Today: completed' : '⏳ Today: not yet';
+
+    const profile = await this._getOrCreateProfile(userId);
+    const tz = profile.timezone || 'UTC';
+    const history = profile.commitmentHistory || {};
+
+    // Last 5 days ending today
+    const now = new Date();
+    const cells = [];
+    for (let i = 4; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 86400000);
+      const key = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(d);
+      const label = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d);
+      cells.push(`${history[key]?.success ? '✅' : '⬜'} ${label}`);
+    }
+
+    const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+    const todayDone = history[todayKey]?.success;
+    const todayLine = todayDone
+      ? '✅ Today: done — great work!'
+      : '⏳ Today not logged yet\n→ Say _"I did it"_ to keep your streak';
+
+    const historyEntries = Object.values(history);
+    const feedback = historyEntries.length >= 4
+      ? `\n\n💡 ${this._streakFeedback(historyEntries, s.currentStreak)}`
+      : '';
+
     return [
-      `🔥 *Your streak: ${s.currentStreak} day(s)*`,
+      `🔥 *Streak: ${s.currentStreak} day(s) — ${this._formatHabit(s.dailyCommitment)}*`,
       '─────────────────',
-      `🎯 Daily goal: ${this._formatHabit(s.dailyCommitment)}`,
-      todayLine,
-      '💪 Keep it going!'
-    ].join('\n');
+      cells.join('  '),
+      '',
+      todayLine
+    ].join('\n') + feedback;
   }
 
   async setDailyMessageTime(userId, message) {
@@ -1223,6 +1248,46 @@ Keep it under 20 words. No emojis. Just the sentence.`;
     if (!commitment) return '';
     if (commitment.isTimeBased === false) return `${commitment.minutes} ${commitment.description}`;
     return `${commitment.minutes}min ${commitment.description}`;
+  }
+
+  _streakFeedback(historyEntries, currentStreak) {
+    const byDow = {};
+    historyEntries.forEach(h => {
+      if (!h.date) return;
+      const [y, m, d] = h.date.split('-').map(Number);
+      const dow = new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long' });
+      if (!byDow[dow]) byDow[dow] = [];
+      byDow[dow].push(h.success ? 1 : 0);
+    });
+
+    const rate = (days) => {
+      const vals = days.flatMap(d => byDow[d] || []);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+
+    const weekdayRate = rate(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']);
+    const weekendRate = rate(['Saturday', 'Sunday']);
+
+    const sorted = [...historyEntries].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    let best = 0, run = 0;
+    sorted.forEach(h => { run = h.success ? run + 1 : 0; if (run > best) best = run; });
+
+    if (weekdayRate !== null && weekendRate !== null && weekendRate < weekdayRate - 0.3 && weekendRate < 0.5) {
+      return 'You tend to slip on weekends — weekdays are your strong suit.';
+    }
+    if (weekdayRate !== null && weekendRate !== null && weekdayRate < weekendRate - 0.3) {
+      return "You're actually stronger on weekends — interesting.";
+    }
+    const worstEntries = Object.entries(byDow)
+      .map(([d, vs]) => [d, vs.reduce((a, b) => a + b, 0) / vs.length])
+      .sort((a, b) => a[1] - b[1]);
+    if (worstEntries[0] && worstEntries[0][1] < 0.5) {
+      return `${worstEntries[0][0]}s are your hardest day — plan ahead.`;
+    }
+    if (currentStreak > 0 && currentStreak >= best && best > 1) {
+      return `This is your longest streak yet — ${currentStreak} days!`;
+    }
+    return 'Every check-in counts. Keep going.';
   }
 
   _goalProgressBar(milestonesProgress) {

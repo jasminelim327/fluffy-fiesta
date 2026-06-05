@@ -129,3 +129,37 @@ test('_buildDailySnapshot with no calendar events is unchanged', () => {
   const snapshot = assistant._buildDailySnapshot(profile, []);
   expect(snapshot).not.toContain('events today');
 });
+
+test('_streakFeedback returns personal best message when streak is new high', () => {
+  const history = [
+    { date: '2026-06-01', success: true },
+    { date: '2026-06-02', success: true },
+    { date: '2026-06-03', success: true },
+  ];
+  const result = assistant._streakFeedback(history, 3);
+  expect(result).toContain('longest streak');
+});
+
+test('_streakFeedback returns weekend slip message when weekend rate is low', () => {
+  const history = [
+    { date: '2026-06-02', success: true },  // Mon
+    { date: '2026-06-03', success: true },  // Tue
+    { date: '2026-06-04', success: true },  // Wed
+    { date: '2026-05-31', success: false }, // Sat
+    { date: '2026-06-01', success: false }, // Sun
+  ];
+  const result = assistant._streakFeedback(history, 3);
+  expect(result).toContain('weekend');
+});
+
+test('_streakFeedback returns default message when not enough pattern', () => {
+  const history = [
+    { date: '2026-06-01', success: true },
+    { date: '2026-06-02', success: true },
+    { date: '2026-06-03', success: true },
+    { date: '2026-06-04', success: true },
+  ];
+  const result = assistant._streakFeedback(history, 1);
+  expect(typeof result).toBe('string');
+  expect(result.length).toBeGreaterThan(0);
+});
