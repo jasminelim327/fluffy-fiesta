@@ -1467,32 +1467,42 @@ Reply with ONLY the index number (0, 1, 2…) of the best match. If no match, re
   // ============================================
 
   async _callOpenRouter(userMessage, systemPrompt, userId) {
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      ...this._getConversationHistory(userId),
+      { role: 'user', content: userMessage }
+    ];
+    const headers = {
+      'Authorization': `Bearer ${this.openrouterKey}`,
+      'HTTP-Referer': 'https://personal-assistant.local',
+      'X-Title': 'Personal Assistant Bot'
+    };
+    const fallbackModel = 'openai/gpt-4o-mini';
+
+    const attempt = async (model) => axios.post(this.openrouterUrl, {
+      model, messages, max_tokens: 800
+    }, { headers });
+
     try {
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        ...this._getConversationHistory(userId),
-        { role: 'user', content: userMessage }
-      ];
-
-      const response = await axios.post(this.openrouterUrl, {
-        model: this.openrouterModel,
-        messages,
-        max_tokens: 800
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.openrouterKey}`,
-          'HTTP-Referer': 'https://personal-assistant.local',
-          'X-Title': 'Personal Assistant Bot'
+      let response;
+      try {
+        response = await attempt(this.openrouterModel);
+      } catch (primaryErr) {
+        const status = primaryErr.response?.status;
+        if (status === 400 || status === 429 || status === 503) {
+          console.warn(`Primary model (${this.openrouterModel}) failed (${status}), retrying with ${fallbackModel}`);
+          response = await attempt(fallbackModel);
+        } else {
+          throw primaryErr;
         }
-      });
-
+      }
       const content = response.data.choices[0].message.content;
       this._addConversationEntry(userId, 'user', userMessage);
       this._addConversationEntry(userId, 'assistant', content);
       return content;
     } catch (error) {
       console.error('OpenRouter error:', error.response?.status, error.response?.data || error.message);
-      return 'Had a moment there, but I believe in you. Try again!';
+      return 'Had a moment there — try again in a second!';
     }
   }
 
