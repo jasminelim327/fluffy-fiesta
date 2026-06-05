@@ -1075,7 +1075,7 @@ app.listen(PORT, async () => {
       openrouterModel: process.env.OPENROUTER_MODEL,
       telegramToken: TELEGRAM_TOKEN,
       calendarSync: googleCalendar,
-      googleCredentials: googleCredentials || null,
+      googleCredentials: googleCalendar?.credentials || null,
       onTaskCreated: syncTask,
       onGoogleConnect: generateGoogleAuthUrl
     });
