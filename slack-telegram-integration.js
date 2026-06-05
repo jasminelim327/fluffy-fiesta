@@ -268,9 +268,16 @@ class MessagingIntegration {
           { text: `✅ ${t.action.slice(0, 28)}`, callback_data: `done:${userId}:${t.id}` },
           { text: '⏰ Snooze', callback_data: `snooze:${userId}:${t.id}` }
         ]);
-        const calButtons = calEvents.slice(0, 4).map(e => [{
-          text: `✅ ${e.title.slice(0, 35)}`,
-          callback_data: `cal_done:${userId}:${e.id}`
+        // Cache event IDs in profile — callback_data is limited to 64 bytes
+        // so we use the index instead of the full Google Calendar event ID
+        if (calEvents.length > 0) {
+          this.assistant.updateProfileMeta(userId, {
+            calEventCache: calEvents.slice(0, 4).map(e => e.id)
+          }).catch(() => {});
+        }
+        const calButtons = calEvents.slice(0, 4).map((e, i) => [{
+          text: `✅ ${(e.title || 'Event').slice(0, 40)}`,
+          callback_data: `cal_done:${userId}:${i}`
         }]);
         const allButtons = [...taskButtons, ...calButtons];
         if (allButtons.length > 0) {
@@ -588,18 +595,19 @@ class MessagingIntegration {
       );
     } catch (error) {
       // Telegram rejects bad Markdown — retry as plain text so message is never silently dropped
-      if (error.response?.status === 400 && error.response?.data?.description?.includes('parse entities')) {
+      const desc = error.response?.data?.description || '';
+      if (error.response?.status === 400 && (desc.includes('parse entities') || desc.includes('markup') || desc.includes('BUTTON_DATA_INVALID'))) {
         try {
-          const { parse_mode, ...safeOptions } = options;
+          // Retry without parse_mode and without reply_markup
           await axios.post(
             `https://api.telegram.org/bot${this.telegramToken}/sendMessage`,
-            { chat_id: chatId, text: text.replace(/[*_`[\]]/g, ''), ...safeOptions }
+            { chat_id: chatId, text: text.replace(/[*_`[\]]/g, '') }
           );
         } catch (fallbackErr) {
           console.error('Telegram send fallback error:', fallbackErr.message);
         }
       } else {
-        console.error('Telegram send error:', error.message);
+        console.error('Telegram send error:', error.response?.status, desc || error.message);
       }
     }
   }

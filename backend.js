@@ -516,15 +516,23 @@ app.post('/telegram/webhook', async (req, res) => {
       }
     } else if (action === 'cal_done' && messagingIntegration) {
       const cbUserId = parts[1];
-      const eventId = parts[2];
+      const eventIndex = parseInt(parts[2]);
       try {
-        const deleted = await messagingIntegration.assistant.deleteCalendarEvent(cbUserId, eventId);
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
-          chat_id: cbChatId,
-          message_id: cbMessageId,
-          text: deleted ? '✅ Done — removed from Calendar' : '⚠️ Could not remove from Calendar',
-          parse_mode: 'Markdown'
-        });
+        const profile = await db.getUserProfile(cbUserId);
+        const eventId = profile?.calEventCache?.[eventIndex];
+        if (!eventId) {
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+            chat_id: cbChatId, message_id: cbMessageId,
+            text: '⚠️ Event not found — try /tasks again to refresh.'
+          });
+        } else {
+          const deleted = await messagingIntegration.assistant.deleteCalendarEvent(cbUserId, eventId);
+          await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+            chat_id: cbChatId, message_id: cbMessageId,
+            text: deleted ? '✅ Done — removed from Calendar' : '⚠️ Could not remove from Calendar',
+            parse_mode: 'Markdown'
+          });
+        }
       } catch (err) {
         console.error('cal_done callback failed:', err.message);
       }
@@ -732,15 +740,23 @@ async function telegramPolling() {
             }
           } else if (action === 'cal_done' && messagingIntegration) {
             const cbUserId = parts[1];
-            const eventId = parts[2];
+            const eventIndex = parseInt(parts[2]);
             try {
-              const deleted = await messagingIntegration.assistant.deleteCalendarEvent(cbUserId, eventId);
-              await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
-                chat_id: cbChatId,
-                message_id: cbMessageId,
-                text: deleted ? '✅ Done — removed from Calendar' : '⚠️ Could not remove from Calendar',
-                parse_mode: 'Markdown'
-              });
+              const profile = await db.getUserProfile(cbUserId);
+              const eventId = profile?.calEventCache?.[eventIndex];
+              if (!eventId) {
+                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+                  chat_id: cbChatId, message_id: cbMessageId,
+                  text: '⚠️ Event not found — try /tasks again to refresh.'
+                });
+              } else {
+                const deleted = await messagingIntegration.assistant.deleteCalendarEvent(cbUserId, eventId);
+                await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/editMessageText`, {
+                  chat_id: cbChatId, message_id: cbMessageId,
+                  text: deleted ? '✅ Done — removed from Calendar' : '⚠️ Could not remove from Calendar',
+                  parse_mode: 'Markdown'
+                });
+              }
             } catch (err) {
               console.error('cal_done callback failed:', err.message);
             }
