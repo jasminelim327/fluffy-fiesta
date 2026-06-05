@@ -777,7 +777,8 @@ RECURRING: [yes/no]`;
       sorted.forEach((t, i) => {
         const prefix = t.priority === 'high' ? '⚡ ' : '';
         const recurTag = t.recurring ? ' ⟳' : '';
-        lines.push(`${i + 1}. ${prefix}${t.action}${recurTag} — _${t.deadline}_`);
+        const safeAction = (t.action || '').replace(/[_*`[\]]/g, '');
+        lines.push(`${i + 1}. ${prefix}${safeAction}${recurTag} — _${t.deadline}_`);
       });
       lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
     }
@@ -817,7 +818,8 @@ RECURRING: [yes/no]`;
     tasks.forEach((t, i) => {
       const prefix = t.priority === 'high' ? '⚡ ' : '';
       const recurTag = t.recurring ? ' ⟳' : '';
-      lines.push(`${i + 1}. ${prefix}${t.action}${recurTag}`);
+      const safeAction = (t.action || '').replace(/[_*`[\]]/g, '');
+      lines.push(`${i + 1}. ${prefix}${safeAction}${recurTag}`);
     });
     lines.push('', '💡 Tap ✅ to complete · ⏰ to snooze 30min');
     return lines.join('\n');

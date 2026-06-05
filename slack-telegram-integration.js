@@ -588,7 +588,20 @@ class MessagingIntegration {
         { chat_id: chatId, text, parse_mode: 'Markdown', ...options }
       );
     } catch (error) {
-      console.error('Telegram send error:', error.message);
+      // Telegram rejects bad Markdown — retry as plain text so message is never silently dropped
+      if (error.response?.status === 400 && error.response?.data?.description?.includes('parse entities')) {
+        try {
+          const { parse_mode, ...safeOptions } = options;
+          await axios.post(
+            `https://api.telegram.org/bot${this.telegramToken}/sendMessage`,
+            { chat_id: chatId, text: text.replace(/[*_`[\]]/g, ''), ...safeOptions }
+          );
+        } catch (fallbackErr) {
+          console.error('Telegram send fallback error:', fallbackErr.message);
+        }
+      } else {
+        console.error('Telegram send error:', error.message);
+      }
     }
   }
 
