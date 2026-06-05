@@ -242,7 +242,7 @@ Cover: acknowledge the gap, why this goal matters, that it's okay to restart, an
       const habitLine = hasHabit
         ? `You have a habit set: *${profile.dailyCommitment.description}*. Each day you check in (tap ✅ on the habit nudge or type _"I did it"_) counts as a data point.`
         : `Try setting a daily habit first — e.g. _"15 min reading every day"_ — then check in each day.`;
-      return `📊 *Not enough data yet*\n\nI need at least 3 days of check-ins to spot patterns and give you a meaningful review.\n\n${habitLine}\n\nAlso log your energy each day (just send a number like _"7"_) — that's how I learn when you work best.`;
+      return `📅 *This week\'s review*\n_Based on habit check-ins and tasks from the past 7 days_\n─────────────────\n\n📊 Not enough data yet — I need at least 3 days of check-ins.\n\n${habitLine}\n\nAlso log your energy each day (just send a number like _"7"_) — that\'s how I learn when you work best.`;
     }
 
     const systemPrompt = `You are a thoughtful friend doing a weekly check-in.
@@ -282,7 +282,9 @@ PERSONAL_NOTE: [warm closing — 1 sentence]`;
     if (momentum)    lines.push(`🚀 *Next week*\n${momentum}`);
     if (note)        lines.push(`💙 ${note}`);
 
-    return lines.length > 0 ? lines.join('\n\n') : raw;
+    const header = '📅 *This week\'s review*\n_Based on habit check-ins and tasks from the past 7 days_\n─────────────────';
+    const body = lines.length > 0 ? lines.join('\n\n') : raw;
+    return `${header}\n\n${body}`;
   }
 
   // ============================================

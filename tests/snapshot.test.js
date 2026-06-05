@@ -177,3 +177,17 @@ test('analyzePatterns not-enough-data message shows counts', async () => {
   expect(result).toContain('Energy logs: 2');
   expect(result).toContain('Tasks completed: 2');
 });
+
+test('generateWeeklyReview not-enough-data includes header', async () => {
+  const a = new FriendlyAssistant({ openrouterKey: 'test' });
+  a.userProfiles.set('testuser2', {
+    allTasks: [],
+    energyLog: [],
+    commitmentHistory: {},
+    longTermGoals: [],
+    dailyCommitment: null
+  });
+  const result = await a.generateWeeklyReview('testuser2');
+  expect(result).toContain("This week's review");
+  expect(result).toContain('habit check-ins and tasks');
+});
