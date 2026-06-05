@@ -292,35 +292,41 @@ PERSONAL_NOTE: [warm closing — 1 sentence]`;
   // ============================================
 
   async logEnergy(userId, level, context) {
-    /*
-    level: 1-10
-    context: "morning", "after exercise", "before bed", etc
-    */
     const profile = await this._getOrCreateProfile(userId);
     if (!profile.energyLog) profile.energyLog = [];
 
-    const entry = {
+    profile.energyLog.push({
       timestamp: new Date().toISOString(),
       level,
       context,
       dayOfWeek: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
       timeOfDay: this._getTimeOfDay()
-    };
-
-    profile.energyLog.push(entry);
+    });
     await this._saveProfile(userId, profile);
 
-    // Analyze pattern every 10 entries
-    if (profile.energyLog.length % 10 === 0) {
-      const pattern = this._analyzeEnergyPattern(profile.energyLog);
-      return {
-        message: `📊 Tracking your energy. Noticing pattern: You're most energized ${pattern.peak}`,
-        pattern: pattern,
-        suggestion: `Why not schedule deep work during ${pattern.peak}?`
-      };
+    const log = profile.energyLog;
+    const sevenDaysAgo = Date.now() - 7 * 86400000;
+    const weekLog = log.filter(e => new Date(e.timestamp).getTime() >= sevenDaysAgo);
+    const weekAvg = weekLog.length
+      ? (weekLog.reduce((s, e) => s + e.level, 0) / weekLog.length).toFixed(1)
+      : level.toFixed(1);
+    const weekCount = weekLog.length;
+
+    const bar = '▓'.repeat(level) + '░'.repeat(10 - level);
+
+    let insight = '';
+    if (log.length >= 7) {
+      const pattern = this._analyzeEnergyPattern(log);
+      insight = `\n\n💡 Your highest energy: ${pattern.peak}. Schedule deep work then.`;
+    } else {
+      const needed = 7 - log.length;
+      insight = `\n\n_${needed} more check-in${needed === 1 ? '' : 's'} and I can show you your peak hours._`;
     }
 
-    return { message: `✅ Energy logged: ${level}/10` };
+    let suffix = '';
+    if (level >= 8) suffix = '\n\n💡 High energy today — good time to tackle something hard.';
+
+    return `⚡ ${level}/10 logged\n\nThis week: avg ${weekAvg} · ${weekCount} check-in${weekCount === 1 ? '' : 's'}\n${bar}${insight}${suffix}`;
   }
 
   async getOptimalWorkSchedule(userId) {

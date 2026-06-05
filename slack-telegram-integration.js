@@ -177,10 +177,9 @@ class MessagingIntegration {
       case 'energy': {
         const numMatch = message.match(/(\d+)/);
         if (numMatch) {
-          response = this._formatTelegramResponse(
-            await this.assistant.logEnergy(userId, parseInt(numMatch[1]), 'user logged'), chatId
-          );
           const energyLevel = parseInt(numMatch[1]);
+          const energyText = await this.assistant.logEnergy(userId, energyLevel, 'user logged');
+          response = this._formatTelegramResponse(energyText, chatId);
           if (energyLevel <= 4) {
             response.followUpButtons = [[
               { text: '💪 Motivate Me', callback_data: `shortcut:${userId}:motivation` },

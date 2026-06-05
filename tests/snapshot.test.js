@@ -191,3 +191,20 @@ test('generateWeeklyReview not-enough-data includes header', async () => {
   expect(result).toContain("This week's review");
   expect(result).toContain('habit check-ins and tasks');
 });
+
+test('logEnergy response contains bar and week stats', async () => {
+  const a = new FriendlyAssistant({ openrouterKey: 'test' });
+  const now = new Date().toISOString();
+  a.userProfiles.set('energyuser', {
+    allTasks: [], commitmentHistory: {}, longTermGoals: [],
+    energyLog: [
+      { level: 7, timestamp: now, timeOfDay: 'morning' },
+      { level: 8, timestamp: now, timeOfDay: 'morning' },
+      { level: 5, timestamp: now, timeOfDay: 'evening' },
+    ]
+  });
+  const result = await a.logEnergy('energyuser', 6, 'user logged');
+  expect(typeof result).toBe('string');
+  expect(result).toContain('6/10');
+  expect(result).toContain('avg');
+});
