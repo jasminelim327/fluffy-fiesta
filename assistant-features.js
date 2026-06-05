@@ -435,6 +435,19 @@ MOTIVATION: [why this matters beyond money/status]`;
     */
     const profile = await this._getOrCreateProfile(userId);
 
+    const energyCount = (profile.energyLog || []).length;
+    const habitCheckins = Object.values(profile.commitmentHistory || {}).filter(h => h.success).length;
+    const completedTasks = (profile.allTasks || []).filter(t => t.completed).length;
+
+    const hasEnoughData = energyCount >= 5 && habitCheckins >= 3;
+
+    if (!hasEnoughData) {
+      const energyLine = `• Energy logs: ${energyCount} so far (need 5+)`;
+      const habitLine = `• Habit check-ins: ${habitCheckins} logged (need 3+)`;
+      const tasksLine = `• Tasks completed: ${completedTasks}`;
+      return `🔍 *How you work*\n_Based on your task history, energy logs, and habit check-ins_\n─────────────────\n\nNot enough data yet. Here's what I need:\n${energyLine}\n${habitLine}\n${tasksLine}\n\nKeep going — patterns emerge around day 7.\n_Say a number like "7" to log your energy today._`;
+    }
+
     const analysis = {
       procrastinationPatterns: this._findProcrastinationPatterns(profile),
       focusWindows: this._findFocusWindows(profile),
@@ -456,23 +469,22 @@ EXPERIMENT: [one concrete small behavior change to try this week — 1-2 sentenc
 
     const raw = await this._callOpenRouter('Analyze my patterns', systemPrompt);
 
-    // Parse the labelled sections and format for Telegram
     const get = (label) => {
       const match = raw.match(new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i'));
       return match ? match[1].trim() : null;
     };
-    const insight = get('INSIGHT');
-    const goodNews = get('GOOD.?NEWS');
-    const challenge = get('GENTLE.?CHALLENGE');
+    const insight    = get('INSIGHT');
+    const goodNews   = get('GOOD.?NEWS');
+    const challenge  = get('GENTLE.?CHALLENGE');
     const experiment = get('EXPERIMENT');
 
-    const lines = [];
+    const lines = ['🔍 *How you work*', '_Based on your task history, energy logs, and habit check-ins_', '─────────────────', ''];
     if (insight)    lines.push(`🔍 *Insight*\n${insight}`);
     if (goodNews)   lines.push(`✅ *Good news*\n${goodNews}`);
     if (challenge)  lines.push(`🎯 *Gentle challenge*\n${challenge}`);
     if (experiment) lines.push(`🧪 *Try this week*\n${experiment}`);
 
-    return lines.length > 0 ? lines.join('\n\n') : raw;
+    return lines.join('\n\n');
   }
 
   // ============================================

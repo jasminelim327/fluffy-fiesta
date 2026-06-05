@@ -163,3 +163,17 @@ test('_streakFeedback returns default message when not enough pattern', () => {
   expect(typeof result).toBe('string');
   expect(result.length).toBeGreaterThan(0);
 });
+
+test('analyzePatterns not-enough-data message shows counts', async () => {
+  const a = new FriendlyAssistant({ openrouterKey: 'test' });
+  const now = new Date().toISOString();
+  a.userProfiles.set('testuser', {
+    allTasks: [{ completed: true }, { completed: true }],
+    energyLog: [{ level: 7, timestamp: now }, { level: 8, timestamp: now }],
+    commitmentHistory: {},
+    longTermGoals: []
+  });
+  const result = await a.analyzePatterns('testuser');
+  expect(result).toContain('Energy logs: 2');
+  expect(result).toContain('Tasks completed: 2');
+});
