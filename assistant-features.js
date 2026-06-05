@@ -1136,7 +1136,8 @@ Reply ONLY with these 3 lines. No other text.`;
 Write ONE sentence of motivation relevant to someone working on: ${commitment?.description || 'their goals'}.
 Keep it under 20 words. No emojis. Just the sentence.`;
     const motivationLine = await this._callOpenRouter('morning motivation', systemPrompt);
-    return `☀️ *Good morning!*\n\n${this._buildDailySnapshot(profile)}\n\n💬 _${motivationLine.trim()}_`;
+    const calEvents = await this.getTodayCalendarEvents(userId);
+    return `☀️ *Good morning!*\n\n${this._buildDailySnapshot(profile, calEvents)}\n\n💬 _${motivationLine.trim()}_`;
   }
 
   _extractHabitFromMessage(message) {
@@ -1437,7 +1438,7 @@ Reply with ONLY the index number (0, 1, 2…) of the best match. If no match, re
     return `${streak} days! 🏆 You're a legend!`;
   }
 
-  _buildDailySnapshot(profile) {
+  _buildDailySnapshot(profile, calendarEvents = []) {
     const now = Date.now();
     const in24h = now + 24 * 60 * 60 * 1000;
     const tz = profile.timezone || 'UTC';
@@ -1462,7 +1463,15 @@ Reply with ONLY the index number (0, 1, 2…) of the best match. If no match, re
       ? `• ⚡ Last energy: ${lastEnergy.level}/10`
       : '• ⚡ Energy not logged yet';
 
-    return ['─────────────────', '📅 *Today\'s snapshot*', tasksLine, streakLine, energyLine].join('\n');
+    const lines = ['─────────────────', '📅 *Today\'s snapshot*', tasksLine, streakLine, energyLine];
+
+    if (calendarEvents.length > 0) {
+      const titles = calendarEvents.slice(0, 3).map(e => e.title).join(' · ');
+      const more = calendarEvents.length > 3 ? ` +${calendarEvents.length - 3} more` : '';
+      lines.push(`• 📅 ${calendarEvents.length} events today: ${titles}${more}`);
+    }
+
+    return lines.join('\n');
   }
 
   _daysAgo(date) {
