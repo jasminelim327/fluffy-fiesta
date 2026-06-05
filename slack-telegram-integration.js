@@ -7,7 +7,8 @@ class MessagingIntegration {
   constructor(config) {
     this.assistant = new FriendlyAssistant({
       openrouterKey: config.openrouterKey,
-      openrouterModel: config.openrouterModel
+      openrouterModel: config.openrouterModel,
+      googleCredentials: config.googleCredentials || null
     });
     this.telegramToken = config.telegramToken;
     this.calendarSync = config.calendarSync;
@@ -52,7 +53,8 @@ class MessagingIntegration {
       const tz = profile.timezone || 'UTC';
       const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
       if (profile.lastSnapshotDate === todayKey) return response;
-      const snapshot = this.assistant._buildDailySnapshot(profile);
+      const calEvents = await this.assistant.getTodayCalendarEvents(userId);
+      const snapshot = this.assistant._buildDailySnapshot(profile, calEvents);
       if (response && typeof response.text === 'string') {
         await this.assistant.updateProfileMeta(userId, { lastSnapshotDate: todayKey });
         return { ...response, text: response.text + '\n\n' + snapshot };
@@ -262,17 +264,22 @@ class MessagingIntegration {
         const sortedTasks = [...openTasks].sort((a, b) =>
           (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
         );
-        if (sortedTasks.length > 0) {
+        const calEvents = await this.assistant.getTodayCalendarEvents(userId);
+        const taskButtons = sortedTasks.slice(0, 6).map(t => [
+          { text: `✅ ${t.action.slice(0, 28)}`, callback_data: `done:${userId}:${t.id}` },
+          { text: '⏰ Snooze', callback_data: `snooze:${userId}:${t.id}` }
+        ]);
+        const calButtons = calEvents.slice(0, 4).map(e => [{
+          text: `✅ ${e.title.slice(0, 35)}`,
+          callback_data: `cal_done:${userId}:${e.id}`
+        }]);
+        const allButtons = [...taskButtons, ...calButtons];
+        if (allButtons.length > 0) {
           response = {
             chat_id: chatId,
             text: this._toTelegramMarkdown(listText),
             parse_mode: 'Markdown',
-            reply_markup: {
-              inline_keyboard: sortedTasks.slice(0, 6).map(t => [
-                { text: `✅ ${t.action.slice(0, 28)}`, callback_data: `done:${userId}:${t.id}` },
-                { text: '⏰ Snooze', callback_data: `snooze:${userId}:${t.id}` }
-              ])
-            }
+            reply_markup: { inline_keyboard: allButtons }
           };
         } else {
           response = this._formatTelegramResponse(listText, chatId);
