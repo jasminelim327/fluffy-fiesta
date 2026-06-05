@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Guide — Fluffy Fiesta</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Georgia, serif; background: #FFFAF5; color: #5C3D2E; }
+    a { color: #FF6B35; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    nav {
+      background: #FFF8F0;
+      border-bottom: 1px solid #FFD9BF;
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.05rem; color: #D4501A; }
+    .nav-links { display: flex; gap: 24px; font-size: 0.82rem; color: #A0664A; }
+    .nav-links a { color: #A0664A; }
+    .nav-links a.active { color: #D4501A; font-weight: 700; }
+
+    .page-hero {
+      background: linear-gradient(160deg, #FFF8F0, #FFF0E0);
+      padding: 48px 32px 36px;
+      text-align: center;
+    }
+    .page-hero h1 { font-size: 1.8rem; font-weight: 900; color: #D4501A; margin-bottom: 10px; }
+    .page-hero p { font-size: 0.9rem; color: #8B5E3C; max-width: 480px; margin: 0 auto; line-height: 1.7; }
+
+    .guide-wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 32px 64px;
+    }
+
+    .toc {
+      background: #FFF8F0;
+      border: 1px solid #FFD9BF;
+      border-radius: 14px;
+      padding: 24px 28px;
+      margin-bottom: 48px;
+    }
+    .toc h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; color: #A0664A; margin-bottom: 14px; }
+    .toc ol { padding-left: 20px; }
+    .toc li { font-size: 0.85rem; color: #5C3D2E; margin-bottom: 6px; line-height: 1.5; }
+    .toc a { color: #D4501A; }
+
+    .section { margin-bottom: 52px; }
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #FFD9BF;
+    }
+    .section-icon { font-size: 1.6rem; }
+    .section h2 { font-size: 1.15rem; font-weight: 900; color: #D4501A; }
+
+    .section p { font-size: 0.88rem; color: #5C3D2E; line-height: 1.75; margin-bottom: 14px; }
+    .section p:last-child { margin-bottom: 0; }
+
+    .step-list { list-style: none; padding: 0; margin-bottom: 16px; }
+    .step-list li {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 12px;
+      font-size: 0.87rem;
+      color: #5C3D2E;
+      line-height: 1.6;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      background: #FF6B35;
+      color: white;
+      border-radius: 50%;
+      font-size: 0.72rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 1px;
+    }
+
+    .cmd-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .cmd {
+      background: #FFF0E0;
+      border: 1px solid #FFD9BF;
+      border-radius: 10px;
+      padding: 12px 16px;
+    }
+    .cmd .phrase { font-family: monospace; font-size: 0.83rem; color: #D4501A; font-weight: 700; margin-bottom: 4px; }
+    .cmd .desc { font-size: 0.78rem; color: #8B5E3C; line-height: 1.5; }
+
+    .tip {
+      background: #FFF8F0;
+      border-left: 3px solid #FF6B35;
+      border-radius: 0 10px 10px 0;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 0.85rem;
+      color: #5C3D2E;
+      line-height: 1.65;
+    }
+    .tip strong { color: #D4501A; }
+
+    .loop-diagram {
+      background: white;
+      border: 1px solid #FFD9BF;
+      border-radius: 14px;
+      padding: 24px;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .loop-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .loop-item {
+      background: #FFF0E0;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 0.8rem;
+      color: #5C3D2E;
+      font-weight: 700;
+    }
+    .loop-arrow { color: #FF6B35; font-size: 1rem; font-weight: 700; }
+
+    .slash-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .slash-item {
+      background: #FFF0E0;
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .slash-item .slash { font-family: monospace; font-size: 0.85rem; color: #D4501A; font-weight: 700; }
+    .slash-item .slash-desc { font-size: 0.75rem; color: #8B5E3C; margin-top: 2px; }
+
+    footer {
+      background: #3D1A00;
+      padding: 20px 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    footer span { color: #A0664A; font-size: 0.75rem; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { color: #A0664A; font-size: 0.75rem; }
+
+    @media (max-width: 540px) {
+      .nav-links { gap: 14px; }
+      .guide-wrap { padding: 32px 20px 48px; }
+      .cmd-grid { grid-template-columns: 1fr; }
+      .slash-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="nav-brand">
+      <svg width="32" height="32" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="36" cy="38" rx="22" ry="24" fill="#FF8C55"/>
+        <ellipse cx="36" cy="36" rx="20" ry="22" fill="#FFA06A"/>
+        <ellipse cx="29" cy="33" rx="3.5" ry="4" fill="white"/>
+        <ellipse cx="43" cy="33" rx="3.5" ry="4" fill="white"/>
+        <circle cx="30" cy="34" r="2" fill="#333"/>
+        <circle cx="44" cy="34" r="2" fill="#333"/>
+        <path d="M28 41 Q36 48 44 41" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <rect x="10" y="14" width="5" height="5" rx="1" fill="#FFD166" transform="rotate(20 12 16)"/>
+        <rect x="54" y="10" width="5" height="5" rx="1" fill="#4ECDC4" transform="rotate(-15 56 12)"/>
+        <circle cx="16" cy="52" r="3" fill="#FF6B6B"/>
+        <circle cx="58" cy="48" r="3" fill="#FFD166"/>
+        <rect x="52" y="26" width="4" height="4" rx="1" fill="#FF6B6B" transform="rotate(30 54 28)"/>
+        <rect x="13" y="30" width="4" height="4" rx="1" fill="#4ECDC4" transform="rotate(-20 15 32)"/>
+      </svg>
+      Fluffy Fiesta
+    </div>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="guide.html" class="active">User Guide</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="terms.html">Terms</a>
+    </div>
+  </nav>
+
+  <div class="page-hero">
+    <h1>How to get the most out of Fluffy Fiesta</h1>
+    <p>Everything you need to turn daily check-ins into real productivity — from first message to peak-hour insights.</p>
+  </div>
+
+  <div class="guide-wrap">
+
+    <div class="toc">
+      <h2>On this page</h2>
+      <ol>
+        <li><a href="#start">Getting started in 3 steps</a></li>
+        <li><a href="#loop">The core productivity loop</a></li>
+        <li><a href="#tasks">Capture tasks and reminders</a></li>
+        <li><a href="#habits">Build a daily habit streak</a></li>
+        <li><a href="#energy">Log energy — unlock your peak hours</a></li>
+        <li><a href="#patterns">Understand your patterns</a></li>
+        <li><a href="#goals">Set long-term goals with milestones</a></li>
+        <li><a href="#commands">Full command reference</a></li>
+        <li><a href="#tips">Pro tips</a></li>
+      </ol>
+    </div>
+
+    <!-- GETTING STARTED -->
+    <div class="section" id="start">
+      <div class="section-header">
+        <div class="section-icon">🚀</div>
+        <h2>Getting started in 3 steps</h2>
+      </div>
+      <ul class="step-list">
+        <li>
+          <div class="step-num">1</div>
+          <div><strong>Open the bot and send /start.</strong> Fluffy Fiesta will introduce itself and ask you to set your first daily habit. This is the foundation everything else is built on.</div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div><strong>Share your location once</strong> (tap 📎 → Location in Telegram) so the bot knows your timezone and can send morning briefs and reminders at the right local time.</div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div><strong>Set your daily habit.</strong> Type something like <em>"15 min reading every day"</em> or <em>"30 min workout daily"</em>. From that moment, Fluffy Fiesta tracks your streak automatically.</div>
+        </li>
+      </ul>
+      <div class="tip"><strong>Tip:</strong> You can also set your timezone by typing <em>"my timezone is Singapore"</em> (or any city name) — no location share needed.</div>
+    </div>
+
+    <!-- CORE LOOP -->
+    <div class="section" id="loop">
+      <div class="section-header">
+        <div class="section-icon">🔄</div>
+        <h2>The core productivity loop</h2>
+      </div>
+      <p>Fluffy Fiesta is designed around a daily loop. Each step feeds the next — the longer you stay in it, the more useful the insights become.</p>
+      <div class="loop-diagram">
+        <div class="loop-row">
+          <div class="loop-item">☀️ Morning brief</div>
+          <div class="loop-arrow">→</div>
+          <div class="loop-item">📌 Add tasks</div>
+          <div class="loop-arrow">→</div>
+          <div class="loop-item">⚡ Log energy</div>
+        </div>
+        <div class="loop-row" style="margin-top:12px">
+          <div class="loop-item">🔍 See patterns</div>
+          <div class="loop-arrow">←</div>
+          <div class="loop-item">📊 Weekly review</div>
+          <div class="loop-arrow">←</div>
+          <div class="loop-item">✅ Check in habit</div>
+        </div>
+      </div>
+      <p>The bot learns from your energy logs, habit check-ins, and task completions. After about a week of consistent use, it can tell you when you're most productive and what patterns are holding you back.</p>
+    </div>
+
+    <!-- TASKS -->
+    <div class="section" id="tasks">
+      <div class="section-header">
+        <div class="section-icon">📌</div>
+        <h2>Capture tasks and reminders</h2>
+      </div>
+      <p>Just describe what you need to do — no special syntax required. The bot extracts the action, deadline, and priority automatically.</p>
+      <div class="cmd-grid">
+        <div class="cmd">
+          <div class="phrase">"Call dentist on Friday"</div>
+          <div class="desc">Saves as a task with a Friday deadline</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">"Submit report by Monday 9am"</div>
+          <div class="desc">Saves with a timed deadline — reminder fires at 9am Monday</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">"Buy groceries today"</div>
+          <div class="desc">Saves as high-priority for today</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">"Team standup every day at 9am"</div>
+          <div class="desc">Creates a recurring daily reminder</div>
+        </div>
+      </div>
+      <p>Tasks with a specific time (e.g. "at 3pm") get a reminder message with ✅ Done and ⏰ Snooze 30min buttons. Tasks without a time are saved but only shown in your list — no reminder fires.</p>
+      <div class="tip"><strong>To view tasks:</strong> tap <strong>📋 My Tasks</strong> or send <em>/tasks</em>. Tap ✅ next to any task to mark it done, or ⏰ to snooze it by 30 minutes.</div>
+    </div>
+
+    <!-- HABITS -->
+    <div class="section" id="habits">
+      <div class="section-header">
+        <div class="section-icon">🔥</div>
+        <h2>Build a daily habit streak</h2>
+      </div>
+      <p>A habit is a single daily commitment you want to make non-negotiable. You set it once; the bot tracks it every day.</p>
+      <ul class="step-list">
+        <li>
+          <div class="step-num">1</div>
+          <div><strong>Set your habit:</strong> type <em>"15 min reading every day"</em> or <em>"30 min yoga daily"</em>. The bot confirms and starts tracking from today.</div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div><strong>At 8pm</strong> you get a nudge asking if you did it. Tap <strong>✅ I did it</strong> to log progress — or just type <em>"I did it"</em> or <em>"done"</em> at any time.</div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div><strong>Check your streak</strong> with /streak or the 🔥 button. After 4+ days, the bot shows a week view and a data-driven line about your strongest and weakest days.</div>
+        </li>
+      </ul>
+      <div class="tip"><strong>Why one habit?</strong> Research consistently shows that trying to build multiple habits at once dramatically reduces success rates. Pick the one thing that, if done daily, would have the biggest positive impact on your work. Add others once the first is solid.</div>
+    </div>
+
+    <!-- ENERGY -->
+    <div class="section" id="energy">
+      <div class="section-header">
+        <div class="section-icon">⚡</div>
+        <h2>Log energy — unlock your peak hours</h2>
+      </div>
+      <p>Energy logging is the most underused feature. It takes 2 seconds and unlocks genuinely useful scheduling insight after about a week.</p>
+      <p><strong>How to log:</strong> just send a number from 1 to 10 at any point in the day. Once is fine; multiple times is better.</p>
+      <div class="cmd-grid">
+        <div class="cmd">
+          <div class="phrase">3</div>
+          <div class="desc">Low energy — logs it, shows week average, and offers a motivation boost</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">8</div>
+          <div class="desc">High energy — suggests tackling something hard right now</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">/energy</div>
+          <div class="desc">Opens the energy prompt if you can't remember the scale</div>
+        </div>
+      </div>
+      <p>After 7 check-ins the bot tells you your peak energy time (e.g. "Tuesday mornings"). After that, it shows your actual best time with each new log. This is when to schedule your hardest work — deep focus, creative output, complex decisions.</p>
+      <div class="tip"><strong>Pro move:</strong> log your energy at the same time each day — say, right after lunch and before bed. Consistent timing makes the patterns much more meaningful.</div>
+    </div>
+
+    <!-- PATTERNS -->
+    <div class="section" id="patterns">
+      <div class="section-header">
+        <div class="section-icon">🔍</div>
+        <h2>Understand your patterns</h2>
+      </div>
+      <p>Two commands give you different views of your data:</p>
+      <div class="cmd-grid">
+        <div class="cmd">
+          <div class="phrase">/patterns</div>
+          <div class="desc"><strong>How you work</strong> — behavioural analysis based on task history, energy logs, and habit streaks. Needs 5+ energy logs and 3+ habit check-ins. Tells you what trips you up and one thing to try this week.</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">/review</div>
+          <div class="desc"><strong>This week's review</strong> — what happened in the past 7 days: habit completions, tasks finished, energy average. Needs 3+ days of check-ins. A backward-looking weekly summary.</div>
+        </div>
+      </div>
+      <div class="tip"><strong>Think of it this way:</strong> /review tells you <em>what</em> happened. /patterns tells you <em>why</em> and <em>how</em> to improve.</div>
+      <p>If either shows "not enough data yet", it tells you exactly what's missing — energy logs, habit check-ins, or both. Just keep your daily routine and the insight builds up automatically.</p>
+    </div>
+
+    <!-- GOALS -->
+    <div class="section" id="goals">
+      <div class="section-header">
+        <div class="section-icon">🎯</div>
+        <h2>Set long-term goals with milestones</h2>
+      </div>
+      <p>Long-term goals are for bigger ambitions that take weeks or months. The bot breaks them into 4–5 concrete milestones and tracks your progress with a visual progress bar.</p>
+      <ul class="step-list">
+        <li>
+          <div class="step-num">1</div>
+          <div>Say something like <em>"I want to build a SaaS product"</em> or use <em>/longterm</em>. The bot asks for the goal name, your reason for doing it, and a timeline.</div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div>It proposes 4–5 milestones. You can say <em>"yes"</em> to accept or tell it what to change — it'll revise and re-propose.</div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div>Use <em>/longterm</em> to see your goals with progress bars. Tap 📍 on any goal to see milestones with ✅ Done buttons.</div>
+        </li>
+        <li>
+          <div class="step-num">4</div>
+          <div>When you complete a milestone, tap ✅ or type something like <em>"I finished the MVP"</em> — the bot matches it to the right milestone automatically.</div>
+        </li>
+      </ul>
+    </div>
+
+    <!-- COMMANDS -->
+    <div class="section" id="commands">
+      <div class="section-header">
+        <div class="section-icon">⌨️</div>
+        <h2>Full command reference</h2>
+      </div>
+      <p>Every command can also be triggered by just typing naturally — the bot understands plain English. Slash commands are shortcuts.</p>
+      <div class="slash-grid">
+        <div class="slash-item">
+          <div class="slash">/start</div>
+          <div class="slash-desc">Guided setup</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/tasks</div>
+          <div class="slash-desc">View all open tasks</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/streak</div>
+          <div class="slash-desc">Habit streak + week view</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/energy</div>
+          <div class="slash-desc">Log your energy level</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/patterns</div>
+          <div class="slash-desc">Behavioural analysis</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/review</div>
+          <div class="slash-desc">Weekly progress summary</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/coach</div>
+          <div class="slash-desc">Personal coaching moment</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/longterm</div>
+          <div class="slash-desc">Long-term goals + milestones</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/motivation</div>
+          <div class="slash-desc">Boost when you're stuck</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/stats</div>
+          <div class="slash-desc">Task completion stats</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/settings</div>
+          <div class="slash-desc">Timezone, habit, times</div>
+        </div>
+        <div class="slash-item">
+          <div class="slash">/connect</div>
+          <div class="slash-desc">Link Google Calendar</div>
+        </div>
+      </div>
+      <p><strong>Scheduled messages</strong> (sent automatically each day):</p>
+      <div class="cmd-grid" style="margin-top:12px">
+        <div class="cmd">
+          <div class="phrase">☀️ Morning brief — 8:00 AM</div>
+          <div class="desc">Today's tasks, streak status, energy snapshot, motivational line</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">🔔 Habit nudge — 8:00 PM</div>
+          <div class="desc">Reminder to check in your daily habit with one-tap Done/Skip</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">⚡ Energy check-in — 9:00 PM</div>
+          <div class="desc">Prompt to log your end-of-day energy level</div>
+        </div>
+        <div class="cmd">
+          <div class="phrase">📊 Weekly review — Sundays 6:00 PM</div>
+          <div class="desc">Automatic summary of the past week's completions and patterns</div>
+        </div>
+      </div>
+      <div class="tip"><strong>Change any time:</strong> say <em>"morning brief at 7am"</em>, <em>"habit nudge at 9pm"</em>, or <em>"energy check-in off"</em> to adjust. All times respect your timezone.</div>
+    </div>
+
+    <!-- PRO TIPS -->
+    <div class="section" id="tips">
+      <div class="section-header">
+        <div class="section-icon">💡</div>
+        <h2>Pro tips for maximum productivity</h2>
+      </div>
+
+      <div class="tip"><strong>One habit at a time.</strong> Set a single daily commitment and keep it for at least 30 days before adding another. Consistency compounds faster than variety.</div>
+
+      <div class="tip"><strong>Log energy at consistent times.</strong> Morning and evening readings give the most useful patterns. Seven days of consistent logging unlocks your personal peak-hour schedule.</div>
+
+      <div class="tip"><strong>Check /streak every morning.</strong> Seeing your week view first thing — even before opening other apps — makes it harder to let the day slip by without doing your habit.</div>
+
+      <div class="tip"><strong>Use /coach after a tough week.</strong> The coaching moment analyses your actual data (streak, energy average, tasks, goals) and gives you a specific, honest reflection — not generic advice.</div>
+
+      <div class="tip"><strong>Say "I finished the MVP" instead of tapping manually.</strong> The bot understands natural milestone completion phrases and matches them to your goal automatically.</div>
+
+      <div class="tip"><strong>Connect Google Calendar.</strong> Use <em>/connect</em> to link your Google Calendar. New tasks with deadlines are added automatically, and today's events appear in your task list alongside your bot tasks.</div>
+
+      <div class="tip"><strong>Ask it anything.</strong> Fluffy Fiesta has access to your task history, habit data, energy logs, and goals — so questions like <em>"what should I focus on today?"</em> or <em>"am I on track with my reading goal?"</em> get genuinely contextual answers, not generic ones.</div>
+    </div>
+
+    <div style="text-align:center; margin-top: 12px;">
+      <a href="https://t.me/firereminder_bot" style="display:inline-block; background:#FF6B35; color:white; border-radius:10px; padding:13px 32px; font-size:0.9rem; font-weight:700;">💬 Open Fluffy Fiesta in Telegram</a>
+    </div>
+
+  </div>
+
+  <footer>
+    <span>© 2026 Fluffy Fiesta</span>
+    <div class="footer-links">
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="terms.html">Terms of Service</a>
+    </div>
+  </footer>
+
+</body>
+</html>
