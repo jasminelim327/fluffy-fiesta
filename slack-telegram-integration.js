@@ -587,7 +587,33 @@ class MessagingIntegration {
   // SEND TO TELEGRAM
   // ============================================
 
+  _splitMessage(text, limit = 4000) {
+    if (text.length <= limit) return [text];
+    const chunks = [];
+    let remaining = text;
+    while (remaining.length > limit) {
+      // Split at last newline before limit to avoid cutting mid-sentence
+      let cut = remaining.lastIndexOf('\n', limit);
+      if (cut < limit * 0.5) cut = limit; // no good newline — hard cut
+      chunks.push(remaining.slice(0, cut));
+      remaining = remaining.slice(cut).trimStart();
+    }
+    if (remaining) chunks.push(remaining);
+    return chunks;
+  }
+
   async sendToTelegram(chatId, text, options = {}) {
+    const chunks = this._splitMessage(text || '');
+    // Send all chunks except last without reply_markup; last chunk gets the keyboard
+    for (let i = 0; i < chunks.length - 1; i++) {
+      try {
+        await axios.post(
+          `https://api.telegram.org/bot${this.telegramToken}/sendMessage`,
+          { chat_id: chatId, text: chunks[i], parse_mode: 'Markdown' }
+        );
+      } catch { /* best-effort — continue to next chunk */ }
+    }
+    text = chunks[chunks.length - 1];
     try {
       await axios.post(
         `https://api.telegram.org/bot${this.telegramToken}/sendMessage`,

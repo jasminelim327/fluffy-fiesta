@@ -1480,7 +1480,7 @@ Reply with ONLY the index number (0, 1, 2…) of the best match. If no match, re
     const fallbackModel = 'openai/gpt-4o-mini';
 
     const attempt = async (model) => axios.post(this.openrouterUrl, {
-      model, messages, max_tokens: 800
+      model, messages, max_tokens: 2000
     }, { headers });
 
     try {
