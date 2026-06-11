@@ -11,6 +11,7 @@ const bodyParser = require('body-parser');
 const cron = require('node-cron');
 const db = require('./db');
 const MessagingIntegration = require('./slack-telegram-integration');
+const { buildSummary, postDailyFeedback } = require('./astrology-integration');
 
 const path = require('path');
 
@@ -60,7 +61,8 @@ async function registerBotCommands() {
         { command: 'goals',     description: 'Revisit goals you have not touched' },
         { command: 'settings',  description: 'View your current settings' },
         { command: 'longterm',  description: 'Set or view your long-term goals' },
-        { command: 'connect',   description: 'Link your Google Calendar' }
+        { command: 'connect',   description: 'Link your Google Calendar' },
+        { command: 'link',      description: 'Link your Astrology Bot email' }
       ]
     });
     console.log('✅ Bot commands registered with Telegram');
@@ -90,6 +92,28 @@ function resolveSlashCommand(msg) {
     connect:    'connect google'
   };
   return { command: raw, text: commandMap[raw] || null };
+}
+
+// Link this Telegram account to an Astrology Bot email so the daily briefing's
+// execution stack can be delivered here. Returns a reply string.
+async function handleLinkCommand(userId, rawText) {
+  const email = (String(rawText || '').split(/\s+/)[1] || '').trim();
+  if (!email) {
+    return '🔗 To link your Astrology Bot briefing, send:\n`/link your-email@example.com`\n\nUse the same email you set in your Astrology Bot profile.';
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return `That doesn't look like a valid email. Try: \`/link you@example.com\``;
+  }
+  if (!messagingIntegration) {
+    return '⚠️ Assistant is still starting up — try again in a moment.';
+  }
+  try {
+    await messagingIntegration.assistant.updateProfileMeta(userId, { integrationEmail: email });
+    return `✅ Linked to *${email}*.\n\nFrom tomorrow, your morning brief here will lead with your Astrology Bot briefing and load its execution stack as tap-to-do tasks.`;
+  } catch (err) {
+    console.error('handleLinkCommand error:', err.message);
+    return '⚠️ Could not save the link just now. Please try again shortly.';
+  }
 }
 
 // Startup checks: warn when critical env vars are missing
@@ -572,6 +596,11 @@ app.post('/telegram/webhook', async (req, res) => {
           await messagingIntegration.handleStart(userId, chatId);
           return;
         }
+        if (slash.command === 'link') {
+          const reply = await handleLinkCommand(userId, msg.text);
+          await sendTelegramMessage(chatId, reply);
+          return;
+        }
         if (slash.text) {
           const formatted = await messagingIntegration.handleTelegramMessage(slash.text, userId, chatId);
           await sendFormattedResponse(messagingIntegration, chatId, formatted);
@@ -790,6 +819,11 @@ async function telegramPolling() {
               if (slash) {
                 if (slash.command === 'start') {
                   await messagingIntegration.handleStart(userId, chatId);
+                  continue;
+                }
+                if (slash.command === 'link') {
+                  const reply = await handleLinkCommand(userId, msg.text);
+                  await sendTelegramMessage(chatId, reply);
                   continue;
                 }
                 if (slash.text) {
@@ -1066,6 +1100,80 @@ async function syncTask(actionData, userId) {
 }
 
 // ============================================
+// ASTROLOGY BOT INTEGRATION — briefing intake
+// ============================================
+// The Astrology Bot POSTs the day's headline + execution stack here each
+// morning. We turn the stack into tap-to-do tasks and stash the headline so the
+// next morning brief leads with it.
+app.post('/api/briefing-intake', async (req, res) => {
+  const secret = process.env.INTEGRATION_SECRET;
+  if (secret && req.get('X-Integration-Secret') !== secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!messagingIntegration) {
+    return res.status(503).json({ error: 'Assistant not ready yet' });
+  }
+
+  const body = req.body || {};
+  const email = body.user_email;
+  if (!email) return res.status(400).json({ error: 'user_email required' });
+
+  try {
+    const linked = await db.getUserByIntegrationEmail(email);
+    if (!linked) {
+      return res.status(404).json({
+        error: 'No Telegram user linked to this email',
+        hint: `Ask the user to send "/link ${email}" to the bot in Telegram.`
+      });
+    }
+
+    const userId = linked.userId;
+    const assistant = messagingIntegration.assistant;
+    const tz = linked.timezone || 'Asia/Singapore';
+    const date = body.date || new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+
+    // Idempotent: drop any still-open briefing tasks already loaded for this day
+    // so a re-push (or retry) doesn't create duplicates.
+    try {
+      const profile = await db.getUserProfile(userId);
+      if (profile && Array.isArray(profile.allTasks)) {
+        const before = profile.allTasks.length;
+        profile.allTasks = profile.allTasks.filter(t =>
+          !(t.source === 'astrology-briefing' && t.briefingDate === date && !t.completed)
+        );
+        if (profile.allTasks.length !== before) await db.saveUserProfile(userId, profile);
+      }
+    } catch (err) {
+      console.warn('[intake] dedupe skipped:', err.message);
+    }
+
+    const stack = Array.isArray(body.execution_stack) ? body.execution_stack : [];
+    let created = 0;
+    for (const item of stack) {
+      if (!item || !item.title) continue;
+      await assistant.saveTask(userId, {
+        action: item.title,
+        deadline: item.deadline || 'today',
+        priority: item.priority || 'high',
+        source: 'astrology-briefing',
+        briefingDate: date
+      });
+      created++;
+    }
+
+    await assistant.updateProfileMeta(userId, {
+      pendingBriefing: { date, headline: body.headline || '', count: created }
+    });
+
+    console.log(`[intake] ${email}: ${created} tasks queued for ${date}`);
+    res.json({ success: true, created });
+  } catch (err) {
+    console.error('POST /api/briefing-intake error:', err.message);
+    res.status(500).json({ error: 'Failed to process briefing', details: err.message });
+  }
+});
+
+// ============================================
 // STARTUP
 // ============================================
 
@@ -1184,12 +1292,26 @@ app.listen(PORT, async () => {
           console.log(`📊 Weekly review sent to user ${user.userId}`);
         }
 
+        // ── End-of-day feedback → Astrology Bot ───────────────────────────────
+        // One push per day, after the energy check-in, so tomorrow's briefing is
+        // written with today's real execution + energy. Needs a linked email.
+        const feedbackHour = user.feedbackPushTime !== undefined ? user.feedbackPushTime : 22;
+        if (localHour === feedbackHour && user.integrationEmail
+            && user.lastFeedbackPushDate !== todayKey) {
+          const summary = buildSummary(user, todayKey);
+          const result = await postDailyFeedback(user.integrationEmail, todayKey, summary);
+          if (result.ok || result.skipped) {
+            await messagingIntegration.assistant.updateProfileMeta(user.userId, { lastFeedbackPushDate: todayKey });
+          }
+          if (result.ok) console.log(`🔁 Feedback pushed to Astrology Bot for user ${user.userId}`);
+        }
+
       } catch (err) {
         console.error(`Scheduled message failed for user ${user.userId}:`, err.message);
       }
     }
   });
-  console.log('⏰ Hourly cron active — morning brief, habit nudge, energy check-in, weekly review');
+  console.log('⏰ Hourly cron active — morning brief, habit nudge, energy check-in, weekly review, astro feedback');
 
   // Per-minute reminder cron — fires tasks with deadlineMs in the current minute window
   cron.schedule('* * * * *', async () => {

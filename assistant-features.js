@@ -770,6 +770,8 @@ RECURRING: [yes/no]`;
       completed: false,
       deadlineMs: deadlineMs || null,
       remindedAt: null,
+      source: taskData.source || null,
+      briefingDate: taskData.briefingDate || null,
       created: new Date().toISOString(),
       lastTouched: new Date().toISOString()
     });
@@ -1235,7 +1237,22 @@ Write ONE sentence of motivation relevant to someone working on: ${commitment?.d
 Keep it under 20 words. No emojis. Just the sentence.`;
     const motivationLine = await this._callOpenRouter('morning motivation', systemPrompt);
     const calEvents = await this.getTodayCalendarEvents(userId);
-    return `☀️ *Good morning!*\n\n${this._buildDailySnapshot(profile, calEvents)}\n\n💬 _${motivationLine.trim()}_`;
+
+    // If the Astrology Bot pushed a briefing for today, lead with its headline so
+    // the strategist's framing and the execution stack arrive in one message.
+    let briefingHeader = '';
+    const pb = profile.pendingBriefing;
+    if (pb && pb.headline) {
+      const tz = profile.timezone || 'Asia/Singapore';
+      const todayKey = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+      if (!pb.date || pb.date === todayKey) {
+        briefingHeader = `✨ *${pb.headline}*\n_Your strategic briefing landed — full version in your email. Today's stack is below._\n\n`;
+        // Clear it so it only leads one morning.
+        this.updateProfileMeta(userId, { pendingBriefing: null }).catch(() => {});
+      }
+    }
+
+    return `${briefingHeader}☀️ *Good morning!*\n\n${this._buildDailySnapshot(profile, calEvents)}\n\n💬 _${motivationLine.trim()}_`;
   }
 
   _extractHabitFromMessage(message) {

@@ -120,11 +120,31 @@ async function getAllUsersWithTelegram() {
   }
 }
 
+// Find the Telegram user who linked the given Astrology Bot email via /link.
+// Matching is case-insensitive. Returns { userId, ...profile } or null.
+async function getUserByIntegrationEmail(email) {
+  if (!pool || !email) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT user_id, profile FROM user_profiles
+       WHERE lower(profile->>'integrationEmail') = lower($1)
+       LIMIT 1`,
+      [String(email)]
+    );
+    if (!rows[0]) return null;
+    return { userId: rows[0].user_id, ...rows[0].profile };
+  } catch (err) {
+    console.error('[DB] getUserByIntegrationEmail error:', err.message);
+    return null;
+  }
+}
+
 module.exports = {
   initializeDatabase,
   getUserProfile,
   saveUserProfile,
   saveGoogleToken,
   getGoogleToken,
-  getAllUsersWithTelegram
+  getAllUsersWithTelegram,
+  getUserByIntegrationEmail
 };
